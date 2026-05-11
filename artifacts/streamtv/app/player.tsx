@@ -24,7 +24,6 @@ export default function PlayerScreen() {
   const controlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [showControls, setShowControls] = useState(true);
-  const [isPlaying, setIsPlaying] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showSubtitles, setShowSubtitles] = useState(false);
   const [subtitleTracks, setSubtitleTracks] = useState<{ id: string; label: string; language: string }[]>([]);
@@ -35,9 +34,6 @@ export default function PlayerScreen() {
   });
 
   useEffect(() => {
-    const sub = player.addListener("playingChange", (ev) => {
-      setIsPlaying(ev.isPlaying);
-    });
     const errSub = player.addListener("statusChange", (ev) => {
       if (ev.status === "error") {
         setError("Stream failed to load. This may require an external player.");
@@ -51,7 +47,6 @@ export default function PlayerScreen() {
       }
     });
     return () => {
-      sub.remove();
       errSub.remove();
       trackSub.remove();
     };
@@ -76,12 +71,6 @@ export default function PlayerScreen() {
     hideControlsAfterDelay();
     return () => { if (controlsTimer.current) clearTimeout(controlsTimer.current); };
   }, []);
-
-  const togglePlay = () => {
-    if (player.playing) player.pause();
-    else player.play();
-    showControlsNow();
-  };
 
   const selectSubtitle = (id: string | null) => {
     try {
@@ -111,15 +100,19 @@ export default function PlayerScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: "#000" }]}>
-      <Pressable style={styles.videoWrapper} onPress={showControlsNow}>
+      <View style={styles.videoWrapper}>
         <VideoView
           player={player}
           style={styles.video}
           contentFit="contain"
-          nativeControls={false}
-          allowsFullscreen
+          nativeControls
+          fullscreenOptions={{ enable: true }}
           allowsPictureInPicture
         />
+
+        {/* Tap-catcher overlay — sits above the video so taps reliably toggle our top bar.
+            pointerEvents="box-only" lets the native controls underneath still receive their own touches. */}
+        <Pressable style={styles.tapCatcher} onPress={showControlsNow} pointerEvents="box-only" />
 
         {error && (
           <View style={styles.overlay}>
@@ -138,57 +131,26 @@ export default function PlayerScreen() {
         )}
 
         {showControls && (
-          <Animated.View style={[styles.controls, { opacity: controlsOpacity }]}>
-            <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
-              <Pressable
-                style={[styles.iconBtn, { backgroundColor: "rgba(0,0,0,0.5)" }]}
-                onPress={() => router.back()}
-              >
-                <Feather name="arrow-left" size={22} color="#fff" />
-              </Pressable>
-              <Text style={styles.titleText} numberOfLines={1}>{title}</Text>
-              <Pressable
-                style={[
-                  styles.iconBtn,
-                  { backgroundColor: selectedSubtitle ? "rgba(30,200,180,0.7)" : "rgba(0,0,0,0.5)" },
-                ]}
-                onPress={() => { setShowSubtitles(true); showControlsNow(); }}
-              >
-                <Feather name="message-square" size={20} color="#fff" />
-              </Pressable>
-            </View>
-
-            <View style={styles.centerControls}>
-              <Pressable
-                style={[styles.controlBtn, { backgroundColor: "rgba(0,0,0,0.5)" }]}
-                onPress={() => { player.seekBy(-10); showControlsNow(); }}
-              >
-                <Feather name="rotate-ccw" size={24} color="#fff" />
-                <Text style={styles.seekLabel}>10</Text>
-              </Pressable>
-
-              <Pressable
-                style={[styles.playBtn, { backgroundColor: "rgba(255,255,255,0.15)" }]}
-                onPress={togglePlay}
-              >
-                <Feather name={isPlaying ? "pause" : "play"} size={34} color="#fff" />
-              </Pressable>
-
-              <Pressable
-                style={[styles.controlBtn, { backgroundColor: "rgba(0,0,0,0.5)" }]}
-                onPress={() => { player.seekBy(10); showControlsNow(); }}
-              >
-                <Feather name="rotate-cw" size={24} color="#fff" />
-                <Text style={styles.seekLabel}>10</Text>
-              </Pressable>
-            </View>
-
-            <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 16 }]}>
-              <View style={{ height: 24 }} />
-            </View>
+          <Animated.View style={[styles.topBar, { opacity: controlsOpacity, paddingTop: insets.top + 8 }]} pointerEvents="box-none">
+            <Pressable
+              style={[styles.iconBtn, { backgroundColor: "rgba(0,0,0,0.55)" }]}
+              onPress={() => router.back()}
+            >
+              <Feather name="arrow-left" size={22} color="#fff" />
+            </Pressable>
+            <Text style={styles.titleText} numberOfLines={1}>{title}</Text>
+            <Pressable
+              style={[
+                styles.iconBtn,
+                { backgroundColor: selectedSubtitle ? "rgba(30,200,180,0.75)" : "rgba(0,0,0,0.55)" },
+              ]}
+              onPress={() => { setShowSubtitles(true); showControlsNow(); }}
+            >
+              <Feather name="message-square" size={20} color="#fff" />
+            </Pressable>
           </Animated.View>
         )}
-      </Pressable>
+      </View>
 
       <Modal
         visible={showSubtitles}
@@ -248,20 +210,21 @@ const styles = StyleSheet.create({
   errorHint: { color: "rgba(255,255,255,0.6)", fontSize: 12, textAlign: "center", fontFamily: "Inter_400Regular" },
   retryBtn: { paddingHorizontal: 24, paddingVertical: 10, borderRadius: 8, marginTop: 8 },
   retryText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  controls: { ...StyleSheet.absoluteFillObject, justifyContent: "space-between" },
+  tapCatcher: { ...StyleSheet.absoluteFillObject },
   topBar: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 16,
+    paddingBottom: 12,
+    backgroundColor: "rgba(0,0,0,0.35)",
   },
   iconBtn: { width: 44, height: 44, borderRadius: 22, justifyContent: "center", alignItems: "center" },
   titleText: { color: "#fff", fontSize: 16, fontFamily: "Inter_600SemiBold", flex: 1, textAlign: "center", marginHorizontal: 8 },
-  centerControls: { flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 32 },
-  controlBtn: { width: 52, height: 52, borderRadius: 26, justifyContent: "center", alignItems: "center" },
-  seekLabel: { position: "absolute", bottom: 6, fontSize: 9, color: "#fff", fontFamily: "Inter_700Bold" },
-  playBtn: { width: 72, height: 72, borderRadius: 36, justifyContent: "center", alignItems: "center" },
-  bottomBar: { paddingHorizontal: 16 },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)" },
   subtitleSheet: {
     borderTopLeftRadius: 20,
