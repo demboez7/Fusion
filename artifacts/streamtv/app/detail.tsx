@@ -131,8 +131,7 @@ export default function DetailScreen() {
     if (!type || !id) return;
     setLoadingMeta(true);
     setMetaError(null);
-    const imdbId = id.split(":")[0];
-    getDetail(type, imdbId)
+    getDetail(type, id)
       .then((m) => {
         setMeta(m);
         if (m && type === "series" && m.videos && m.videos.length > 0) {
@@ -142,7 +141,8 @@ export default function DetailScreen() {
           setSeasonNumbers(nums);
           setSelectedSeason(nums[0] ?? 1);
 
-          if (useTmdb) {
+          if (useTmdb && id.startsWith("tt")) {
+            const imdbId = id.split(":")[0];
             setLoadingTmdb(true);
             findTmdbIdFromImdb(imdbId)
               .then((tid) => {
@@ -235,8 +235,11 @@ export default function DetailScreen() {
     setActiveEpisode(ep);
     setStreams([]);
     setStreamsLoaded(false);
-    const imdbId = (id ?? "").split(":")[0];
-    loadStreams(`${imdbId}:${ep.season}:${ep.episode}`);
+    const routeId = id ?? "";
+    const streamId = routeId.startsWith("tt")
+      ? `${routeId.split(":")[0]}:${ep.season}:${ep.episode}`
+      : ep.id;
+    loadStreams(streamId);
   };
 
   const handleStream = (stream: StremioStream) => {

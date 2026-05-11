@@ -3,14 +3,13 @@ import {
   Inter_500Medium,
   Inter_600SemiBold,
   Inter_700Bold,
-  useFonts,
 } from "@expo-google-fonts/inter";
 import { Feather, MaterialIcons } from "@expo/vector-icons";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import * as Font from "expo-font";
+import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -35,27 +34,16 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
-  const [textFontsLoaded, textFontError] = useFonts({
+  const [fontsLoaded, fontError] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
     Inter_600SemiBold,
     Inter_700Bold,
+    ...Feather.font,
+    ...MaterialIcons.font,
   });
-  const [iconsLoaded, setIconsLoaded] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        await Font.loadAsync({
-          ...Feather.font,
-          ...MaterialIcons.font,
-        });
-      } catch {}
-      setIconsLoaded(true);
-    })();
-  }, []);
-
-  const ready = (textFontsLoaded || textFontError) && iconsLoaded;
+  const ready = fontsLoaded || !!fontError;
 
   useEffect(() => {
     if (ready) SplashScreen.hideAsync();
