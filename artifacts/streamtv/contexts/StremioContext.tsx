@@ -1,12 +1,14 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import {
+  CatalogRow,
   LoginResult,
   StremioAddon,
   StremioMeta,
   StremioStream,
   fetchCatalog,
   fetchCatalogFromAddons,
+  fetchCatalogRows,
   fetchMeta,
   fetchMetaFromAddons,
   fetchStreams,
@@ -26,6 +28,7 @@ interface StremioContextValue {
   logout: () => Promise<void>;
   getMovies: (search?: string, skip?: number) => Promise<StremioMeta[]>;
   getSeries: (search?: string, skip?: number) => Promise<StremioMeta[]>;
+  getCatalogRows: () => Promise<CatalogRow[]>;
   getDetail: (type: string, id: string) => Promise<StremioMeta | null>;
   getStreams: (type: string, id: string) => Promise<StremioStream[]>;
 }
@@ -95,6 +98,11 @@ export function StremioProvider({ children }: { children: React.ReactNode }) {
     return fetchCatalog("series", { search, skip });
   }, [addons]);
 
+  const getCatalogRows = useCallback(async (): Promise<CatalogRow[]> => {
+    if (addons.length === 0) return [];
+    return fetchCatalogRows(addons);
+  }, [addons]);
+
   const getDetail = useCallback(async (type: string, id: string): Promise<StremioMeta | null> => {
     const imdbId = id.split(":")[0];
     const [cinemeta, addonMeta] = await Promise.all([
@@ -122,7 +130,7 @@ export function StremioProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <StremioContext.Provider
-      value={{ authKey, user, addons, isLoggedIn: !!authKey, isLoading, login, logout, getMovies, getSeries, getDetail, getStreams }}
+      value={{ authKey, user, addons, isLoggedIn: !!authKey, isLoading, login, logout, getMovies, getSeries, getCatalogRows, getDetail, getStreams }}
     >
       {children}
     </StremioContext.Provider>

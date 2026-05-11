@@ -2,7 +2,7 @@ import { Feather } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Pressable,
   RefreshControl,
@@ -22,42 +22,50 @@ import { useIptv } from "@/contexts/IptvContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useStremio } from "@/contexts/StremioContext";
 import { useColors } from "@/hooks/useColors";
-import { StremioMeta } from "@/services/stremio";
+import { CatalogRow, StremioMeta } from "@/services/stremio";
 
 export default function HomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { width } = useWindowDimensions();
-  const { getMovies, getSeries, addons, isLoading: stremioLoading } = useStremio();
+  const { getMovies, getSeries, getCatalogRows, addons, isLoading: stremioLoading } = useStremio();
   const { channels } = useIptv();
   const { isTvMode } = useSettings();
 
-  const [movies, setMovies] = useState<StremioMeta[]>([]);
-  const [series, setSeries] = useState<StremioMeta[]>([]);
+  const [rows, setRows] = useState<CatalogRow[]>([]);
+  const [fallbackMovies, setFallbackMovies] = useState<StremioMeta[]>([]);
+  const [fallbackSeries, setFallbackSeries] = useState<StremioMeta[]>([]);
   const [hero, setHero] = useState<StremioMeta | null>(null);
-  const [loadingMovies, setLoadingMovies] = useState(true);
-  const [loadingSeries, setLoadingSeries] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const cardWidth = isTvMode ? 180 : 120;
   const tvHeroHeight = isTvMode ? Math.round(width * 0.42) : 420;
 
   const doLoad = async () => {
-    setLoadingMovies(true);
-    setLoadingSeries(true);
+    setLoading(true);
     try {
-      const [m, s] = await Promise.all([getMovies(), getSeries()]);
-      const seen_m = new Set<string>();
-      const deduped_m = m.filter((x) => { if (seen_m.has(x.id)) return false; seen_m.add(x.id); return true; });
-      const seen_s = new Set<string>();
-      const deduped_s = s.filter((x) => { if (seen_s.has(x.id)) return false; seen_s.add(x.id); return true; });
-      setMovies(deduped_m);
-      setSeries(deduped_s);
-      if (deduped_m.length > 0) setHero(deduped_m[Math.floor(Math.random() * Math.min(5, deduped_m.length))]);
+      const catalogRows = await getCatalogRows();
+      if (catalogRows.length > 0) {
+        setRows(catalogRows);
+        setFallbackMovies([]);
+        setFallbackSeries([]);
+        // Pick hero from the first row's first few items.
+        const heroPool = catalogRows[0].items.slice(0, 5);
+        if (heroPool.length > 0) {
+          setHero(heroPool[Math.floor(Math.random() * heroPool.length)]);
+        }
+      } else {
+        // No addon catalogs available — fall back to Cinemeta defaults.
+        setRows([]);
+        const [m, s] = await Promise.all([getMovies(), getSeries()]);
+        setFallbackMovies(m);
+        setFallbackSeries(s);
+        if (m.length > 0) setHero(m[Math.floor(Math.random() * Math.min(5, m.length))]);
+      }
     } catch {}
-    setLoadingMovies(false);
-    setLoadingSeries(false);
+    setLoading(false);
   };
 
   // Re-run whenever stremio finishes its initial load OR addons change (login/logout)
@@ -139,42 +147,56 @@ export default function HomeScreen() {
           />
         )}
 
-        {loadingMovies ? (
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.foreground, fontSize: isTvMode ? 20 : 16 }]}>Top Movies</Text>
-            <ShimmerRow />
-          </View>
+        {loading ? (
+          <>
+            <View style={styles.section}>
+              <Text style={[styles.sectionTitle, { color: colors.foreground, fontSize: isTvMode ? 20 : 16 }]}>Loading…</Text>
+              <ShimmerRow />
+            </View>
+            <View style={styles.section}>
+              <ShimmerRow />
+            </View>
+          </>
+        ) : rows.length > 0 ? (
+          rows.map((row) => (
+            <CategoryRow
+              key={row.key}
+              title={`${row.addonName} · ${row.catalogName}`}
+              data={row.items.slice(0, 20)}
+              keyExtractor={(m) => `${row.key}-${m.id}`}
+              renderItem={({ item }) =>
+                isTvMode
+                  ? <TvContentCard item={item} width={cardWidth} />
+                  : <ContentCard item={item} width={cardWidth} />
+              }
+              seeAllRoute={row.type === "series" ? "/(tabs)/series" : "/(tabs)/movies"}
+            />
+          ))
         ) : (
-          <CategoryRow
-            title="Top Movies"
-            data={movies.slice(0, 12)}
-            keyExtractor={(m) => m.id}
-            renderItem={({ item }) =>
-              isTvMode
-                ? <TvContentCard item={item} width={cardWidth} />
-                : <ContentCard item={item} width={cardWidth} />
-            }
-            seeAllRoute="/(tabs)/movies"
-          />
-        )}
-
-        {loadingSeries ? (
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.foreground, fontSize: isTvMode ? 20 : 16 }]}>Top Series</Text>
-            <ShimmerRow />
-          </View>
-        ) : (
-          <CategoryRow
-            title="Top Series"
-            data={series.slice(0, 12)}
-            keyExtractor={(s) => s.id}
-            renderItem={({ item }) =>
-              isTvMode
-                ? <TvContentCard item={item} width={cardWidth} />
-                : <ContentCard item={item} width={cardWidth} />
-            }
-            seeAllRoute="/(tabs)/series"
-          />
+          <>
+            <CategoryRow
+              title="Top Movies"
+              data={fallbackMovies.slice(0, 12)}
+              keyExtractor={(m) => m.id}
+              renderItem={({ item }) =>
+                isTvMode
+                  ? <TvContentCard item={item} width={cardWidth} />
+                  : <ContentCard item={item} width={cardWidth} />
+              }
+              seeAllRoute="/(tabs)/movies"
+            />
+            <CategoryRow
+              title="Top Series"
+              data={fallbackSeries.slice(0, 12)}
+              keyExtractor={(s) => s.id}
+              renderItem={({ item }) =>
+                isTvMode
+                  ? <TvContentCard item={item} width={cardWidth} />
+                  : <ContentCard item={item} width={cardWidth} />
+              }
+              seeAllRoute="/(tabs)/series"
+            />
+          </>
         )}
       </View>
     </ScrollView>

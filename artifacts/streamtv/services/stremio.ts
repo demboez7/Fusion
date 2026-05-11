@@ -194,6 +194,80 @@ export async function fetchCatalogFromAddons(
   return all;
 }
 
+export interface CatalogRow {
+  key: string;
+  addonId: string;
+  addonName: string;
+  catalogId: string;
+  catalogName: string;
+  type: string;
+  items: StremioMeta[];
+}
+
+export async function fetchCatalogRows(
+  addons: StremioAddon[],
+  types: string[] = ["movie", "series", "anime"],
+  perCatalogLimit = 20
+): Promise<CatalogRow[]> {
+  type Job = {
+    key: string;
+    addonId: string;
+    addonName: string;
+    catalogId: string;
+    catalogName: string;
+    type: string;
+    promise: Promise<StremioMeta[]>;
+  };
+  const jobs: Job[] = [];
+
+  for (const addon of addons) {
+    const addonId = addon.manifest?.id ?? addon.transportUrl;
+    const addonName = addon.manifest?.name ?? "Addon";
+    const baseUrl = addon.transportUrl.replace(/\/manifest\.json$/, "");
+    const catalogs = (addon.manifest?.catalogs ?? []).filter((c) => types.includes(c.type));
+
+    for (const catalog of catalogs) {
+      const catalogExtras = catalog.extra ?? [];
+      const requiredExtras = catalogExtras.filter((e) => e.isRequired);
+      // Skip catalogs that need user-supplied required filters (search, genre, etc.) — they'd return empty.
+      if (requiredExtras.some((e) => e.name !== "skip")) continue;
+
+      const url = buildCatalogUrl(baseUrl, catalog.type, catalog.id);
+      jobs.push({
+        key: `${addonId}::${catalog.type}::${catalog.id}`,
+        addonId,
+        addonName,
+        catalogId: catalog.id,
+        catalogName: catalog.name ?? catalog.id,
+        type: catalog.type,
+        promise: fetchWithTimeout(url, {}, 10000)
+          .then((res) => (res.ok ? res.json() : { metas: [] }))
+          .then((data) => ((data.metas ?? []) as StremioMeta[]).slice(0, perCatalogLimit))
+          .catch(() => [] as StremioMeta[]),
+      });
+    }
+  }
+
+  const settled = await Promise.allSettled(jobs.map((j) => j.promise));
+  const rows: CatalogRow[] = [];
+  for (let i = 0; i < jobs.length; i++) {
+    const j = jobs[i];
+    const r = settled[i];
+    const items = r.status === "fulfilled" ? r.value : [];
+    if (items.length === 0) continue;
+    rows.push({
+      key: j.key,
+      addonId: j.addonId,
+      addonName: j.addonName,
+      catalogId: j.catalogId,
+      catalogName: j.catalogName,
+      type: j.type,
+      items,
+    });
+  }
+  return rows;
+}
+
 export async function fetchMeta(type: string, id: string): Promise<StremioMeta | null> {
   const res = await fetchWithTimeout(`${CINEMETA_URL}/meta/${type}/${id}.json`, {}, 10000);
   if (!res.ok) return null;
