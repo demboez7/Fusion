@@ -29,7 +29,7 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { isLoggedIn, user, login, logout, addons } = useStremio();
   const { playlistUrl, setPlaylistUrl, channels, epgUrl, setEpgUrl, epgData, epgLoading, refreshEpg } = useIptv();
-  const { useTmdb, setUseTmdb, tmdbAvailable, isTvMode, setTvMode } = useSettings();
+  const { isTvMode, setTvMode } = useSettings();
 
   const [showLogin, setShowLogin] = useState(false);
   const [email, setEmail] = useState("");
@@ -200,39 +200,6 @@ export default function SettingsScreen() {
               </View>
             )}
           </>
-        )}
-
-        <SectionHeader title="METADATA" />
-        <View style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={styles.rowLeft}>
-            <Feather name="database" size={18} color={colors.primary} />
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.rowLabel, { color: tmdbAvailable ? colors.foreground : colors.mutedForeground }]}>
-                Use TMDB for seasons & episodes
-              </Text>
-              {!tmdbAvailable && (
-                <Text style={[styles.rowSub, { color: colors.mutedForeground }]}>
-                  Add TMDB_API_KEY secret to enable
-                </Text>
-              )}
-            </View>
-          </View>
-          <Switch
-            value={useTmdb}
-            onValueChange={setUseTmdb}
-            disabled={!tmdbAvailable}
-            trackColor={{ false: colors.muted, true: colors.primary }}
-            thumbColor="#fff"
-          />
-        </View>
-        {!tmdbAvailable && (
-          <View style={[styles.infoBox, { backgroundColor: colors.card }]}>
-            <Feather name="info" size={14} color={colors.mutedForeground} />
-            <Text style={[styles.infoText, { color: colors.mutedForeground }]}>
-              Get a free TMDB API key at themoviedb.org → Settings → API, then add it as{" "}
-              <Text style={{ fontFamily: "Inter_600SemiBold" }}>TMDB_API_KEY</Text> in Replit Secrets.
-            </Text>
-          </View>
         )}
 
         <SectionHeader title="IPTV PLAYLIST" />
