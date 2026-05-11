@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/"
+title = "StreamTV"
+version = "1.0.0"
+id = "artifacts/streamtv"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/" ]
+localPort = 24235
+
+[services.development]
+run = "pnpm --filter @workspace/streamtv run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/streamtv", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/streamtv", "run", "serve" ]
+
+[services.env]
+PORT = "24235"
+BASE_PATH = "/"

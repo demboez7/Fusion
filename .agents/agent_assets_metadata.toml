@@ -1,0 +1,14 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "bo62c7y8G6z9D2OdVE7Al"
+uri = "file://artifacts/streamtv/assets/images/icon.png"
+type = "image"
+title = "streamtv app icon"
+
+[[generated]]
+id = "icK5BxEC3SUxcgiMdZMj3"
+uri = "file://artifacts/streamtv/assets/images/hero_banner.png"
+type = "image"
+title = "hero banner dark cinema"

@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "StreamTV",
+    "slug": "streamtv",
+    "version": "1.0.0",
+    "orientation": "landscape",
+    "icon": "./assets/images/icon.png",
+    "scheme": "streamtv",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0a0a0f"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "intentFilters": [
+        {
+          "action": "android.intent.action.MAIN",
+          "category": [
+            "android.intent.category.LAUNCHER",
+            "android.intent.category.LEANBACK_LAUNCHER"
+          ]
+        }
+      ]
+    },
+    "web": {
+      "favicon": "./assets/images/icon.png"
+    },
+    "plugins": [
+      [
+        "expo-router",
+        {
+          "origin": "https://replit.com/"
+        }
+      ],
+      "expo-font",
+      "expo-web-browser"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
