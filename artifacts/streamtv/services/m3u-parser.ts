@@ -65,14 +65,32 @@ export async function fetchM3U(url: string): Promise<IptvChannel[]> {
   const timeoutId = setTimeout(() => controller.abort(), 20000);
 
   try {
-    const res = await fetch(url, { signal: controller.signal });
-    if (!res.ok) throw new Error(`Server returned ${res.status}`);
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          "User-Agent": "VLC/3.0.18 LibVLC/3.0.18",
+          Accept: "*/*",
+        },
+      });
+    } catch (netErr) {
+      const msg = (netErr as Error).message || String(netErr);
+      throw new Error(
+        `Could not reach the server. ${msg}. ` +
+          `URL: ${url.slice(0, 80)}${url.length > 80 ? "…" : ""}. ` +
+          `If the URL starts with http:// you may need to rebuild the APK with cleartext traffic enabled. ` +
+          `If you're testing in a web browser, this URL is being blocked by CORS — try the installed APK instead.`
+      );
+    }
+    if (!res.ok) throw new Error(`Server returned HTTP ${res.status} for ${url.slice(0, 80)}…`);
     const text = await res.text();
     if (!text.includes("#EXTM3U") && !text.includes("#EXTINF")) {
-      throw new Error("Not a valid M3U file. Check your URL.");
+      const preview = text.slice(0, 120).replace(/\s+/g, " ");
+      throw new Error(`URL responded but content is not an M3U playlist. First 120 chars: "${preview}"`);
     }
     const channels = parseM3U(text);
-    if (channels.length === 0) throw new Error("Playlist loaded but no channels found");
+    if (channels.length === 0) throw new Error("Playlist loaded but no channels found inside it");
     return channels;
   } catch (e) {
     if ((e as Error).name === "AbortError") throw new Error("Request timed out after 20s");
