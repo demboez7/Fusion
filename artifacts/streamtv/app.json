@@ -3,7 +3,7 @@
     "name": "StreamTV",
     "slug": "streamtv",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "streamtv",
     "userInterfaceStyle": "dark",
@@ -14,9 +14,17 @@
       "backgroundColor": "#0a0a0f"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.streamtv.app"
     },
     "android": {
+      "package": "com.streamtv.app",
+      "versionCode": 1,
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.WAKE_LOCK"
+      ],
       "intentFilters": [
         {
           "action": "android.intent.action.MAIN",
@@ -38,7 +46,14 @@
         }
       ],
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-video",
+        {
+          "supportsBackgroundPlayback": true,
+          "supportsPictureInPicture": true
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
