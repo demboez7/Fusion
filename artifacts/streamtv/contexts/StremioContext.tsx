@@ -7,6 +7,7 @@ import {
   StremioStream,
   fetchCatalog,
   fetchMeta,
+  fetchMetaFromAddons,
   fetchStreams,
   getUserAddons,
   stremioLogin,
@@ -65,37 +66,40 @@ export function StremioProvider({ children }: { children: React.ReactNode }) {
     await AsyncStorage.removeItem(STORAGE_AUTH_KEY);
   }, []);
 
-  const getMovies = useCallback(async (search?: string, skip?: number) => {
-    return fetchCatalog("movie", { search, skip });
-  }, []);
+  const getMovies = useCallback((search?: string, skip?: number) =>
+    fetchCatalog("movie", { search, skip }), []);
 
-  const getSeries = useCallback(async (search?: string, skip?: number) => {
-    return fetchCatalog("series", { search, skip });
-  }, []);
+  const getSeries = useCallback((search?: string, skip?: number) =>
+    fetchCatalog("series", { search, skip }), []);
 
-  const getDetail = useCallback(async (type: string, id: string) => {
-    return fetchMeta(type, id);
-  }, []);
+  const getDetail = useCallback(async (type: string, id: string): Promise<StremioMeta | null> => {
+    const imdbId = id.split(":")[0];
+    const [cinemeta, addonMeta] = await Promise.all([
+      fetchMeta(type, imdbId).catch(() => null),
+      addons.length > 0 ? fetchMetaFromAddons(type, imdbId, addons).catch(() => null) : Promise.resolve(null),
+    ]);
 
-  const getStreams = useCallback(async (type: string, id: string) => {
-    return fetchStreams(type, id, addons);
+    if (!cinemeta && !addonMeta) return null;
+
+    const base = cinemeta ?? addonMeta!;
+    if (!addonMeta) return base;
+
+    return {
+      ...base,
+      ...addonMeta,
+      videos: addonMeta.videos?.length ? addonMeta.videos : base.videos,
+      poster: addonMeta.poster ?? base.poster,
+      background: addonMeta.background ?? base.background,
+      description: addonMeta.description ?? base.description,
+    };
   }, [addons]);
+
+  const getStreams = useCallback((type: string, id: string) =>
+    fetchStreams(type, id, addons), [addons]);
 
   return (
     <StremioContext.Provider
-      value={{
-        authKey,
-        user,
-        addons,
-        isLoggedIn: !!authKey,
-        isLoading,
-        login,
-        logout,
-        getMovies,
-        getSeries,
-        getDetail,
-        getStreams,
-      }}
+      value={{ authKey, user, addons, isLoggedIn: !!authKey, isLoading, login, logout, getMovies, getSeries, getDetail, getStreams }}
     >
       {children}
     </StremioContext.Provider>

@@ -32,7 +32,7 @@ export interface StremioAddon {
     name: string;
     version: string;
     catalogs?: AddonCatalog[];
-    resources?: string[];
+    resources?: unknown[];
     types?: string[];
   };
 }
@@ -63,6 +63,7 @@ export interface StremioMeta {
 export interface StremioVideo {
   id: string;
   title?: string;
+  name?: string;
   season?: number;
   episode?: number;
   released?: string;
@@ -76,10 +77,17 @@ export interface StremioStream {
   url?: string;
   infoHash?: string;
   sources?: string[];
+  subtitles?: StremioSubtitle[];
   behaviorHints?: {
     notWebReady?: boolean;
     bingeGroup?: string;
   };
+}
+
+export interface StremioSubtitle {
+  id: string;
+  url: string;
+  lang: string;
 }
 
 export interface LoginResult {
@@ -110,6 +118,16 @@ export async function getUserAddons(authKey: string): Promise<StremioAddon[]> {
   return (data.result?.addons ?? []) as StremioAddon[];
 }
 
+function addonSupportsResource(addon: StremioAddon, resource: string): boolean {
+  return (addon.manifest?.resources ?? []).some((r: unknown) => {
+    if (typeof r === "string") return r === resource;
+    if (typeof r === "object" && r !== null && "name" in r) {
+      return (r as { name: string }).name === resource;
+    }
+    return false;
+  });
+}
+
 export async function fetchCatalog(
   type: "movie" | "series",
   extra?: { search?: string; genre?: string; skip?: number }
@@ -135,6 +153,28 @@ export async function fetchMeta(type: string, id: string): Promise<StremioMeta |
   return (data.meta ?? null) as StremioMeta | null;
 }
 
+export async function fetchMetaFromAddons(
+  type: string,
+  id: string,
+  addons: StremioAddon[]
+): Promise<StremioMeta | null> {
+  const metaAddons = addons.filter(
+    (a) => addonSupportsResource(a, "meta") && (a.manifest?.types ?? []).includes(type)
+  );
+  for (const addon of metaAddons) {
+    try {
+      const baseUrl = addon.transportUrl.replace(/\/manifest\.json$/, "");
+      const res = await fetchWithTimeout(`${baseUrl}/meta/${type}/${id}.json`, {}, 8000);
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (data.meta) return data.meta as StremioMeta;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
 export async function fetchStreams(
   type: string,
   id: string,
@@ -151,15 +191,7 @@ export async function fetchStreams(
 
   if (addons && addons.length > 0) {
     for (const addon of addons) {
-      const resources = addon.manifest?.resources ?? [];
-      const supportsStream = resources.some((r: unknown) => {
-        if (typeof r === "string") return r === "stream";
-        if (typeof r === "object" && r !== null && "name" in r) {
-          return (r as { name: string }).name === "stream";
-        }
-        return false;
-      });
-      if (!supportsStream) continue;
+      if (!addonSupportsResource(addon, "stream")) continue;
       const types = addon.manifest?.types ?? [];
       if (!types.includes(type)) continue;
 
