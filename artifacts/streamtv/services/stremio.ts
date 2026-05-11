@@ -2,6 +2,21 @@ const STREMIO_API = "https://api.strem.io/api";
 const CINEMETA_URL = "https://v3-cinemeta.strem.io";
 const TORRENTIO_URL = "https://torrentio.strem.fun";
 
+async function fetchWithTimeout(
+  url: string,
+  options?: RequestInit,
+  timeoutMs = 10000
+): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    return res;
+  } finally {
+    clearTimeout(id);
+  }
+}
+
 export interface StremioUser {
   _id: string;
   email: string;
@@ -61,7 +76,6 @@ export interface StremioStream {
   url?: string;
   infoHash?: string;
   sources?: string[];
-  subtitles?: { id: string; url: string; lang: string }[];
   behaviorHints?: {
     notWebReady?: boolean;
     bingeGroup?: string;
@@ -74,11 +88,11 @@ export interface LoginResult {
 }
 
 export async function stremioLogin(email: string, password: string): Promise<LoginResult> {
-  const res = await fetch(`${STREMIO_API}/login`, {
+  const res = await fetchWithTimeout(`${STREMIO_API}/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ type: "Login", email, password }),
-  });
+  }, 12000);
   if (!res.ok) throw new Error("Login request failed");
   const data = await res.json();
   if (data.error) throw new Error(data.error);
@@ -86,11 +100,11 @@ export async function stremioLogin(email: string, password: string): Promise<Log
 }
 
 export async function getUserAddons(authKey: string): Promise<StremioAddon[]> {
-  const res = await fetch(`${STREMIO_API}/addonCollectionGet`, {
+  const res = await fetchWithTimeout(`${STREMIO_API}/addonCollectionGet`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ type: "AddonCollectionGet", authKey }),
-  });
+  }, 12000);
   if (!res.ok) throw new Error("Failed to fetch addons");
   const data = await res.json();
   return (data.result?.addons ?? []) as StremioAddon[];
@@ -108,14 +122,14 @@ export async function fetchCatalog(
   if (params.length > 0) url += `/${params.join("&")}.json`;
   else url += ".json";
 
-  const res = await fetch(url);
+  const res = await fetchWithTimeout(url, {}, 12000);
   if (!res.ok) throw new Error(`Failed to fetch ${type} catalog`);
   const data = await res.json();
   return (data.metas ?? []) as StremioMeta[];
 }
 
 export async function fetchMeta(type: string, id: string): Promise<StremioMeta | null> {
-  const res = await fetch(`${CINEMETA_URL}/meta/${type}/${id}.json`);
+  const res = await fetchWithTimeout(`${CINEMETA_URL}/meta/${type}/${id}.json`, {}, 10000);
   if (!res.ok) return null;
   const data = await res.json();
   return (data.meta ?? null) as StremioMeta | null;
@@ -126,51 +140,43 @@ export async function fetchStreams(
   id: string,
   addons?: StremioAddon[]
 ): Promise<StremioStream[]> {
-  const streams: StremioStream[] = [];
+  const streamPromises: Promise<StremioStream[]>[] = [];
 
-  const torrentioRes = await fetch(`${TORRENTIO_URL}/stream/${type}/${id}.json`).catch(() => null);
-  if (torrentioRes?.ok) {
-    const data = await torrentioRes.json();
-    if (data.streams) streams.push(...(data.streams as StremioStream[]));
-  }
+  streamPromises.push(
+    fetchWithTimeout(`${TORRENTIO_URL}/stream/${type}/${id}.json`, {}, 8000)
+      .then((res) => (res.ok ? res.json() : { streams: [] }))
+      .then((data) => (data.streams ?? []) as StremioStream[])
+      .catch(() => [] as StremioStream[])
+  );
 
   if (addons && addons.length > 0) {
     for (const addon of addons) {
       const resources = addon.manifest?.resources ?? [];
-      const supportsStream =
-        resources.includes("stream") ||
-        resources.some((r: unknown) => (typeof r === "object" && r !== null && "name" in r ? (r as { name: string }).name : r) === "stream");
+      const supportsStream = resources.some((r: unknown) => {
+        if (typeof r === "string") return r === "stream";
+        if (typeof r === "object" && r !== null && "name" in r) {
+          return (r as { name: string }).name === "stream";
+        }
+        return false;
+      });
       if (!supportsStream) continue;
       const types = addon.manifest?.types ?? [];
       if (!types.includes(type)) continue;
 
       const baseUrl = addon.transportUrl.replace(/\/manifest\.json$/, "");
-      const addonRes = await fetch(`${baseUrl}/stream/${type}/${id}.json`).catch(() => null);
-      if (addonRes?.ok) {
-        const data = await addonRes.json().catch(() => null);
-        if (data?.streams) streams.push(...(data.streams as StremioStream[]));
-      }
+      streamPromises.push(
+        fetchWithTimeout(`${baseUrl}/stream/${type}/${id}.json`, {}, 8000)
+          .then((res) => (res.ok ? res.json() : { streams: [] }))
+          .then((data) => (data?.streams ?? []) as StremioStream[])
+          .catch(() => [] as StremioStream[])
+      );
     }
   }
 
-  return streams;
-}
-
-export async function fetchAddonCatalog(
-  addon: StremioAddon,
-  type: string,
-  catalogId: string,
-  extra?: Record<string, string>
-): Promise<StremioMeta[]> {
-  const baseUrl = addon.transportUrl.replace(/\/manifest\.json$/, "");
-  let url = `${baseUrl}/catalog/${type}/${catalogId}`;
-  if (extra && Object.keys(extra).length > 0) {
-    const parts = Object.entries(extra).map(([k, v]) => `${k}=${encodeURIComponent(v)}`);
-    url += `/${parts.join("&")}`;
+  const results = await Promise.allSettled(streamPromises);
+  const all: StremioStream[] = [];
+  for (const r of results) {
+    if (r.status === "fulfilled") all.push(...r.value);
   }
-  url += ".json";
-  const res = await fetch(url).catch(() => null);
-  if (!res?.ok) return [];
-  const data = await res.json().catch(() => null);
-  return (data?.metas ?? []) as StremioMeta[];
+  return all;
 }

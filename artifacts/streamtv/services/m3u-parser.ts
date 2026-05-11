@@ -31,11 +31,12 @@ export function parseM3U(content: string): IptvChannel[] {
     if (line.startsWith("#EXTINF:")) {
       const commaIndex = line.indexOf(",");
       const attrs = parseAttributes(line);
-      const name = commaIndex >= 0 ? line.slice(commaIndex + 1).trim() : "Unknown";
+      const name =
+        commaIndex >= 0 ? line.slice(commaIndex + 1).trim() : attrs["tvgname"] || "Unknown";
 
       currentInfo = {
         id: `ch_${index++}`,
-        name,
+        name: name || attrs["tvgname"] || "Channel " + index,
         logo: attrs["tvglogo"] || attrs["logo"],
         group: attrs["grouptitle"] || attrs["group"] || "Other",
         tvgId: attrs["tvgid"],
@@ -43,8 +44,14 @@ export function parseM3U(content: string): IptvChannel[] {
         tvgCountry: attrs["tvgcountry"],
       };
     } else if (!line.startsWith("#") && currentInfo) {
-      if (line.startsWith("http://") || line.startsWith("https://") || line.startsWith("rtmp://")) {
-        channels.push({ ...currentInfo, url: line } as IptvChannel);
+      const trimmed = line.trim();
+      if (
+        trimmed.startsWith("http://") ||
+        trimmed.startsWith("https://") ||
+        trimmed.startsWith("rtmp://") ||
+        trimmed.startsWith("rtsp://")
+      ) {
+        channels.push({ ...currentInfo, url: trimmed } as IptvChannel);
       }
       currentInfo = null;
     }
@@ -54,10 +61,25 @@ export function parseM3U(content: string): IptvChannel[] {
 }
 
 export async function fetchM3U(url: string): Promise<IptvChannel[]> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Failed to fetch playlist: ${res.status}`);
-  const text = await res.text();
-  return parseM3U(text);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new Error(`Server returned ${res.status}`);
+    const text = await res.text();
+    if (!text.includes("#EXTM3U") && !text.includes("#EXTINF")) {
+      throw new Error("Not a valid M3U file. Check your URL.");
+    }
+    const channels = parseM3U(text);
+    if (channels.length === 0) throw new Error("Playlist loaded but no channels found");
+    return channels;
+  } catch (e) {
+    if ((e as Error).name === "AbortError") throw new Error("Request timed out after 20s");
+    throw e;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export function groupChannels(channels: IptvChannel[]): Record<string, IptvChannel[]> {
