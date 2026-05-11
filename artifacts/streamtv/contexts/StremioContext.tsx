@@ -7,6 +7,7 @@ import {
   StremioMeta,
   StremioStream,
   StremioSubtitle,
+  addonSupportsResource,
   fetchCatalog,
   fetchCatalogFromAddons,
   fetchCatalogRows,
@@ -34,6 +35,7 @@ interface StremioContextValue {
   getDetail: (type: string, id: string) => Promise<StremioMeta | null>;
   getStreams: (type: string, id: string) => Promise<StremioStream[]>;
   getSubtitles: (type: string, id: string) => Promise<StremioSubtitle[]>;
+  subtitleAddonsCount: number;
 }
 
 const StremioContext = createContext<StremioContextValue | null>(null);
@@ -143,7 +145,7 @@ export function StremioProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <StremioContext.Provider
-      value={{ authKey, user, addons, isLoggedIn: !!authKey, isLoading, login, logout, getMovies, getSeries, getCatalogRows, getDetail, getStreams, getSubtitles }}
+      value={{ authKey, user, addons, isLoggedIn: !!authKey, isLoading, login, logout, getMovies, getSeries, getCatalogRows, getDetail, getStreams, getSubtitles, subtitleAddonsCount: addons.filter((a) => addonSupportsResource(a, "subtitles")).length }}
     >
       {children}
     </StremioContext.Provider>

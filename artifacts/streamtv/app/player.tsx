@@ -36,7 +36,7 @@ export default function PlayerScreen() {
   const router = useRouter();
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { getSubtitles } = useStremio();
+  const { getSubtitles, subtitleAddonsCount } = useStremio();
 
   const [error, setError] = useState<string | null>(null);
   const [showSubtitles, setShowSubtitles] = useState(false);
@@ -238,7 +238,15 @@ export default function PlayerScreen() {
               </Pressable>
             ))}
 
-            <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>From your subtitle addons</Text>
+            <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
+              From your subtitle addons {subtitleAddonsCount > 0 ? `(${subtitleAddonsCount} installed)` : ""}
+            </Text>
+            {subtitleAddonsCount === 0 && (
+              <Text style={[styles.noSubText, { color: colors.mutedForeground }]}>
+                You don&apos;t have any subtitle addons installed in your Stremio account. Install one
+                (e.g. OpenSubtitles, OpenSubtitles v3, Subscene) from web.stremio.com → Addons → Subtitles, then re-login here.
+              </Text>
+            )}
             {loadingAddonSubs && (
               <View style={styles.loadingRow}>
                 <ActivityIndicator color={colors.primary} size="small" />
