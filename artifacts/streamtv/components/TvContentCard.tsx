@@ -67,7 +67,7 @@ export function TvContentCard({ item, width = 200 }: Props) {
       >
         {item.name}
       </Text>
-      {item.imdbRating && (
+      {!!item.imdbRating && (
         <Text style={[styles.rating, { color: colors.mutedForeground }]}>★ {item.imdbRating}</Text>
       )}
     </Pressable>

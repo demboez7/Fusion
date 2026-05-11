@@ -5,7 +5,6 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -85,8 +84,25 @@ export default function DetailScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { getDetail, getStreams } = useStremio();
+  const { getDetail, getStreams, addons } = useStremio();
   const { useTmdb } = useSettings();
+
+  const streamAddons = addons.filter((a) => {
+    const res = a.manifest?.resources ?? [];
+    return res.some((r: unknown) => {
+      if (typeof r === "string") return r === "stream";
+      if (typeof r === "object" && r !== null && "name" in r) return (r as { name: string }).name === "stream";
+      return false;
+    }) && (a.manifest?.types ?? []).includes(type ?? "");
+  });
+  const metaAddons = addons.filter((a) => {
+    const res = a.manifest?.resources ?? [];
+    return res.some((r: unknown) => {
+      if (typeof r === "string") return r === "meta";
+      if (typeof r === "object" && r !== null && "name" in r) return (r as { name: string }).name === "meta";
+      return false;
+    }) && (a.manifest?.types ?? []).includes(type ?? "");
+  });
 
   const [meta, setMeta] = useState<StremioMeta | null>(null);
   const [loadingMeta, setLoadingMeta] = useState(true);
@@ -217,11 +233,13 @@ export default function DetailScreen() {
     if (stream.url) {
       router.push({
         pathname: "/player",
-        params: { url: stream.url, title: activeEpisode ? `${meta?.name} · S${activeEpisode.season}E${activeEpisode.episode}` : (meta?.name ?? "Stream") },
+        params: {
+          url: stream.url,
+          title: activeEpisode
+            ? `${meta?.name} · S${activeEpisode.season}E${activeEpisode.episode}`
+            : (meta?.name ?? "Stream"),
+        },
       });
-    } else if (stream.infoHash) {
-      const magnet = `magnet:?xt=urn:btih:${stream.infoHash}${stream.sources?.length ? "&tr=" + stream.sources.join("&tr=") : ""}`;
-      Linking.openURL(magnet).catch(() => {});
     }
   };
 
@@ -266,7 +284,7 @@ export default function DetailScreen() {
 
       <View style={styles.content}>
         <View style={styles.posterRow}>
-          {meta.poster && (
+          {!!meta.poster && (
             <Image source={{ uri: meta.poster }} style={[styles.poster, { backgroundColor: colors.card }]} contentFit="cover" />
           )}
           <View style={styles.mainInfo}>
@@ -293,7 +311,7 @@ export default function DetailScreen() {
               {meta.releaseInfo ? <Text style={[styles.metaText, { color: colors.mutedForeground }]}>{meta.releaseInfo}</Text> : null}
               {meta.runtime ? <Text style={[styles.metaText, { color: colors.mutedForeground }]}>· {meta.runtime}</Text> : null}
             </View>
-            {meta.genres && meta.genres.length > 0 && (
+            {!!meta.genres && meta.genres.length > 0 && (
               <Text style={[styles.genres, { color: colors.mutedForeground }]}>{meta.genres.slice(0, 3).join(" · ")}</Text>
             )}
           </View>
@@ -302,6 +320,34 @@ export default function DetailScreen() {
         {meta.description ? (
           <Text style={[styles.description, { color: colors.foreground }]}>{meta.description}</Text>
         ) : null}
+
+        {(streamAddons.length > 0 || metaAddons.length > 0) && (
+          <View style={{ gap: 6 }}>
+            <Text style={[styles.addonLabel, { color: colors.mutedForeground }]}>ACTIVE ADDONS</Text>
+            <View style={styles.addonRow}>
+              <View style={[styles.addonChip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Feather name="database" size={11} color={colors.primary} />
+                <Text style={[styles.addonChipText, { color: colors.foreground }]}>Cinemeta</Text>
+              </View>
+              <View style={[styles.addonChip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Feather name="zap" size={11} color={colors.primary} />
+                <Text style={[styles.addonChipText, { color: colors.foreground }]}>Torrentio</Text>
+              </View>
+              {metaAddons.map((a) => (
+                <View key={a.manifest.id} style={[styles.addonChip, { backgroundColor: colors.surface, borderColor: colors.primary }]}>
+                  <Feather name="star" size={11} color={colors.primary} />
+                  <Text style={[styles.addonChipText, { color: colors.primary }]}>{a.manifest.name}</Text>
+                </View>
+              ))}
+              {streamAddons.map((a) => (
+                <View key={a.manifest.id} style={[styles.addonChip, { backgroundColor: colors.surface, borderColor: colors.primary }]}>
+                  <Feather name="play" size={11} color={colors.primary} />
+                  <Text style={[styles.addonChipText, { color: colors.primary }]}>{a.manifest.name}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
 
         {!isSeries && (
           <Pressable
@@ -465,7 +511,6 @@ export default function DetailScreen() {
 function StreamsList({
   streams,
   streamError,
-  elapsed,
   onPress,
   colors,
   compact = false,
@@ -478,39 +523,60 @@ function StreamsList({
   colors: ReturnType<typeof import("@/hooks/useColors").useColors>;
   compact?: boolean;
 }) {
+  const direct = streams.filter((s) => !!s.url);
+  const torrentOnly = streams.filter((s) => !s.url && !!s.infoHash);
+
   return (
     <View style={compact ? styles.streamsSectionCompact : styles.streamsSection}>
       {!compact && (
         <Text style={[styles.streamsSubtitle, { color: colors.mutedForeground }]}>
-          {streams.length} stream{streams.length !== 1 ? "s" : ""} found
+          {direct.length} playable · {torrentOnly.length} torrent-only
         </Text>
       )}
+
       {streamError ? (
         <View style={[styles.noStreams, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Feather name="info" size={16} color={colors.mutedForeground} />
           <Text style={[styles.noStreamsText, { color: colors.mutedForeground }]}>{streamError}</Text>
         </View>
       ) : null}
-      {streams.map((stream, i) => (
+
+      {direct.map((stream, i) => (
         <Pressable
-          key={i}
+          key={`direct-${i}`}
           style={({ pressed }) => [styles.streamRow, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.75 : 1 }]}
           onPress={() => onPress(stream)}
         >
           <View style={[styles.streamIcon, { backgroundColor: colors.surface }]}>
-            <Feather name={stream.url ? "play-circle" : "link"} size={18} color={colors.primary} />
+            <Feather name="play-circle" size={18} color={colors.primary} />
           </View>
           <View style={styles.streamInfo}>
-            <Text style={[styles.streamName, { color: colors.foreground }]} numberOfLines={2}>
-              {stream.title ?? stream.name ?? "Stream"}
+            <Text style={[styles.streamName, { color: colors.foreground }]} numberOfLines={1}>
+              {stream.name ?? "Stream"}
             </Text>
-            {stream.infoHash && !stream.url ? (
-              <Text style={[styles.streamMeta, { color: colors.mutedForeground }]}>Torrent — opens externally</Text>
+            {stream.title ? (
+              <Text style={[styles.streamMeta, { color: colors.mutedForeground }]} numberOfLines={2}>
+                {stream.title}
+              </Text>
             ) : null}
           </View>
           <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
         </Pressable>
       ))}
+
+      {torrentOnly.length > 0 && (
+        <View style={[styles.torrentBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Feather name="alert-circle" size={15} color="#f59e0b" />
+          <View style={{ flex: 1, gap: 4 }}>
+            <Text style={[styles.torrentTitle, { color: colors.foreground }]}>
+              {torrentOnly.length} torrent-only stream{torrentOnly.length !== 1 ? "s" : ""}
+            </Text>
+            <Text style={[styles.torrentSub, { color: colors.mutedForeground }]}>
+              These require a debrid service (e.g. Real-Debrid) linked in your Torrentio addon settings. Once linked, they become direct playable streams.
+            </Text>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -563,4 +629,11 @@ const styles = StyleSheet.create({
   streamInfo: { flex: 1 },
   streamName: { fontSize: 13, fontFamily: "Inter_500Medium", lineHeight: 18 },
   streamMeta: { fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 2 },
+  torrentBox: { flexDirection: "row", gap: 10, padding: 14, borderRadius: 10, borderWidth: 1, alignItems: "flex-start" },
+  torrentTitle: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  torrentSub: { fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 17 },
+  addonLabel: { fontSize: 10, fontFamily: "Inter_700Bold", letterSpacing: 1 },
+  addonRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  addonChip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, borderWidth: 1 },
+  addonChipText: { fontSize: 11, fontFamily: "Inter_500Medium" },
 });

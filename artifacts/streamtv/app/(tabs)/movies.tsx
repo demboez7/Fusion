@@ -35,8 +35,15 @@ export default function MoviesScreen() {
     else setLoadingMore(true);
     try {
       const results = await getMovies(q || undefined, currentSkip);
-      if (append) setMovies((prev) => [...prev, ...results]);
-      else setMovies(results);
+      if (append) {
+        setMovies((prev) => {
+          const seen = new Set(prev.map((m) => m.id));
+          return [...prev, ...results.filter((r) => !seen.has(r.id))];
+        });
+      } else {
+        const seen = new Set<string>();
+        setMovies(results.filter((r) => { if (seen.has(r.id)) return false; seen.add(r.id); return true; }));
+      }
       setHasMore(results.length >= 20);
     } catch {
       setHasMore(false);
@@ -98,7 +105,7 @@ export default function MoviesScreen() {
         <FlatList
           data={movies}
           numColumns={NUM_COLUMNS}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item, index) => `${item.id}-${index}`}
           columnWrapperStyle={styles.row}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 90 }}
           showsVerticalScrollIndicator={false}

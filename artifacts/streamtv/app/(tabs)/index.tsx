@@ -89,7 +89,7 @@ export default function HomeScreen() {
             <Text style={[styles.heroTitle, { color: colors.foreground, fontSize: isTvMode ? 36 : 28 }]} numberOfLines={2}>
               {hero.name}
             </Text>
-            {hero.imdbRating && (
+            {!!hero.imdbRating && (
               <View style={styles.heroMeta}>
                 <Feather name="star" size={12} color="#f59e0b" />
                 <Text style={[styles.heroMetaText, { color: colors.mutedForeground }]}>{hero.imdbRating}</Text>

@@ -32,8 +32,15 @@ export default function SeriesScreen() {
     else setLoadingMore(true);
     try {
       const results = await getSeries(q || undefined, currentSkip);
-      if (append) setSeries((prev) => [...prev, ...results]);
-      else setSeries(results);
+      if (append) {
+        setSeries((prev) => {
+          const seen = new Set(prev.map((s) => s.id));
+          return [...prev, ...results.filter((r) => !seen.has(r.id))];
+        });
+      } else {
+        const seen = new Set<string>();
+        setSeries(results.filter((r) => { if (seen.has(r.id)) return false; seen.add(r.id); return true; }));
+      }
       setHasMore(results.length >= 20);
     } catch {
       setHasMore(false);
@@ -91,7 +98,7 @@ export default function SeriesScreen() {
         <FlatList
           data={series}
           numColumns={3}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item, index) => `${item.id}-${index}`}
           columnWrapperStyle={styles.row}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 90 }}
           showsVerticalScrollIndicator={false}

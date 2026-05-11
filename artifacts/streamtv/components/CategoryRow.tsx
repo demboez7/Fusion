@@ -35,7 +35,7 @@ export function CategoryRow<T>({
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={[styles.title, { color: colors.foreground }]}>{title}</Text>
-        {seeAllRoute && (
+        {!!seeAllRoute && (
           <Pressable
             onPress={() =>
               router.push({ pathname: seeAllRoute as string, params: seeAllParams })
