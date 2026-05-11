@@ -3,7 +3,7 @@
     "name": "StreamTV",
     "slug": "streamtv",
     "version": "1.0.0",
-    "orientation": "landscape",
+    "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "streamtv",
     "userInterfaceStyle": "dark",
