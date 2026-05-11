@@ -44,6 +44,27 @@ export default function SettingsScreen() {
   const [showEpg, setShowEpg] = useState(false);
   const [epgInput, setEpgInput] = useState(epgUrl);
 
+  const [showAddons, setShowAddons] = useState(false);
+
+  const addonSummary = addons.map((a) => {
+    const resources = (a.manifest?.resources ?? []).map((r) =>
+      typeof r === "string" ? r : (r as { name?: string }).name ?? ""
+    );
+    const catalogs = a.manifest?.catalogs ?? [];
+    const catalogTypes = Array.from(new Set(catalogs.map((c) => c.type)));
+    return {
+      id: a.manifest?.id ?? a.transportUrl,
+      name: a.manifest?.name ?? "Unknown",
+      hasCatalog: catalogs.length > 0,
+      catalogTypes,
+      hasMeta: resources.includes("meta"),
+      hasStream: resources.includes("stream"),
+    };
+  });
+  const movieCatalogCount = addonSummary.filter((a) => a.catalogTypes.includes("movie")).length;
+  const seriesCatalogCount = addonSummary.filter((a) => a.catalogTypes.includes("series")).length;
+  const streamCount = addonSummary.filter((a) => a.hasStream).length;
+
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) { setLoginError("Please enter email and password"); return; }
     setLoggingIn(true); setLoginError("");
@@ -89,13 +110,57 @@ export default function SettingsScreen() {
                 <Text style={[styles.rowLabel, { color: colors.foreground }]}>{user.email}</Text>
               </View>
             </View>
-            <View style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Pressable
+              style={({ pressed }) => [styles.row, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.75 : 1 }]}
+              onPress={() => setShowAddons(!showAddons)}
+            >
               <View style={styles.rowLeft}>
                 <Feather name="package" size={18} color={colors.primary} />
-                <Text style={[styles.rowLabel, { color: colors.foreground }]}>Installed Addons</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.rowLabel, { color: colors.foreground }]}>Installed Addons</Text>
+                  <Text style={[styles.rowSub, { color: colors.mutedForeground }]} numberOfLines={1}>
+                    {movieCatalogCount} movie · {seriesCatalogCount} series · {streamCount} stream
+                  </Text>
+                </View>
               </View>
-              <Text style={[styles.rowValue, { color: colors.mutedForeground }]}>{addons.length}</Text>
-            </View>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Text style={[styles.rowValue, { color: colors.mutedForeground }]}>{addons.length}</Text>
+                <Feather name={showAddons ? "chevron-up" : "chevron-down"} size={16} color={colors.mutedForeground} />
+              </View>
+            </Pressable>
+            {showAddons && (
+              <View style={[styles.form, { backgroundColor: colors.card, borderColor: colors.border, gap: 8 }]}>
+                {addonSummary.length === 0 ? (
+                  <Text style={[styles.rowSub, { color: colors.mutedForeground }]}>No addons loaded.</Text>
+                ) : (
+                  addonSummary.map((a) => (
+                    <View key={a.id} style={{ paddingVertical: 6, borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }}>
+                      <Text style={[styles.rowLabel, { color: colors.foreground }]} numberOfLines={1}>{a.name}</Text>
+                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
+                        {a.catalogTypes.map((t) => (
+                          <View key={`cat-${t}`} style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: colors.primary + "22" }}>
+                            <Text style={{ fontSize: 10, color: colors.primary, fontFamily: "Inter_600SemiBold" }}>catalog:{t}</Text>
+                          </View>
+                        ))}
+                        {a.hasMeta && (
+                          <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: colors.muted }}>
+                            <Text style={{ fontSize: 10, color: colors.foreground, fontFamily: "Inter_600SemiBold" }}>meta</Text>
+                          </View>
+                        )}
+                        {a.hasStream && (
+                          <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: colors.muted }}>
+                            <Text style={{ fontSize: 10, color: colors.foreground, fontFamily: "Inter_600SemiBold" }}>stream</Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  ))
+                )}
+                <Text style={[styles.rowSub, { color: colors.mutedForeground, marginTop: 4 }]}>
+                  The home screen pulls catalogs from addons tagged with catalog:movie / catalog:series. If none are listed, only Cinemeta will appear.
+                </Text>
+              </View>
+            )}
             <Pressable style={({ pressed }) => [styles.row, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.75 : 1 }]} onPress={handleLogout}>
               <View style={styles.rowLeft}>
                 <Feather name="log-out" size={18} color={colors.destructive} />
