@@ -6,6 +6,7 @@ import {
   StremioMeta,
   StremioStream,
   fetchCatalog,
+  fetchCatalogFromAddons,
   fetchMeta,
   fetchMetaFromAddons,
   fetchStreams,
@@ -66,11 +67,27 @@ export function StremioProvider({ children }: { children: React.ReactNode }) {
     await AsyncStorage.removeItem(STORAGE_AUTH_KEY);
   }, []);
 
-  const getMovies = useCallback((search?: string, skip?: number) =>
-    fetchCatalog("movie", { search, skip }), []);
+  const getMovies = useCallback(async (search?: string, skip?: number): Promise<StremioMeta[]> => {
+    const catalogAddons = addons.filter((a) =>
+      (a.manifest?.catalogs ?? []).some((c) => c.type === "movie")
+    );
+    if (catalogAddons.length > 0) {
+      const results = await fetchCatalogFromAddons("movie", catalogAddons, { search, skip });
+      if (results.length > 0) return results;
+    }
+    return fetchCatalog("movie", { search, skip });
+  }, [addons]);
 
-  const getSeries = useCallback((search?: string, skip?: number) =>
-    fetchCatalog("series", { search, skip }), []);
+  const getSeries = useCallback(async (search?: string, skip?: number): Promise<StremioMeta[]> => {
+    const catalogAddons = addons.filter((a) =>
+      (a.manifest?.catalogs ?? []).some((c) => c.type === "series")
+    );
+    if (catalogAddons.length > 0) {
+      const results = await fetchCatalogFromAddons("series", catalogAddons, { search, skip });
+      if (results.length > 0) return results;
+    }
+    return fetchCatalog("series", { search, skip });
+  }, [addons]);
 
   const getDetail = useCallback(async (type: string, id: string): Promise<StremioMeta | null> => {
     const imdbId = id.split(":")[0];

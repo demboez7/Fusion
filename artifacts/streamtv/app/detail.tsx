@@ -84,7 +84,7 @@ export default function DetailScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { getDetail, getStreams, addons } = useStremio();
+  const { getDetail, getStreams, addons, isLoggedIn } = useStremio();
   const { useTmdb } = useSettings();
 
   const streamAddons = addons.filter((a) => {
@@ -103,6 +103,9 @@ export default function DetailScreen() {
       return false;
     }) && (a.manifest?.types ?? []).includes(type ?? "");
   });
+  const catalogAddons = addons.filter((a) =>
+    (a.manifest?.catalogs ?? []).some((c) => c.type === (type ?? ""))
+  );
 
   const [meta, setMeta] = useState<StremioMeta | null>(null);
   const [loadingMeta, setLoadingMeta] = useState(true);
@@ -202,8 +205,15 @@ export default function DetailScreen() {
     try {
       const result = await Promise.race([getStreams(type, sid), timeout]);
       setStreams(result);
-      if (result.length === 0)
-        setStreamError("No streams found. Install Torrentio from the Stremio addon catalog or sign in to your account.");
+      if (result.length === 0) {
+        if (!isLoggedIn) {
+          setStreamError("Sign in to your Stremio account in Settings to load streams from your installed addons.");
+        } else if (streamAddons.length === 0) {
+          setStreamError("No stream addons installed. Add a stream addon (e.g. Torrentio) in the Stremio app, then come back.");
+        } else {
+          setStreamError("No streams found from your installed addons for this title.");
+        }
+      }
     } catch {
       setStreamError("Failed to fetch streams. Check your connection.");
     } finally {
@@ -321,26 +331,28 @@ export default function DetailScreen() {
           <Text style={[styles.description, { color: colors.foreground }]}>{meta.description}</Text>
         ) : null}
 
-        {(streamAddons.length > 0 || metaAddons.length > 0) && (
+        {isLoggedIn && addons.length > 0 && (
           <View style={{ gap: 6 }}>
             <Text style={[styles.addonLabel, { color: colors.mutedForeground }]}>ACTIVE ADDONS</Text>
             <View style={styles.addonRow}>
               <View style={[styles.addonChip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Feather name="database" size={11} color={colors.primary} />
-                <Text style={[styles.addonChipText, { color: colors.foreground }]}>Cinemeta</Text>
+                <Feather name="database" size={11} color={colors.mutedForeground} />
+                <Text style={[styles.addonChipText, { color: colors.mutedForeground }]}>Cinemeta</Text>
               </View>
-              <View style={[styles.addonChip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Feather name="zap" size={11} color={colors.primary} />
-                <Text style={[styles.addonChipText, { color: colors.foreground }]}>Torrentio</Text>
-              </View>
-              {metaAddons.map((a) => (
-                <View key={a.manifest.id} style={[styles.addonChip, { backgroundColor: colors.surface, borderColor: colors.primary }]}>
-                  <Feather name="star" size={11} color={colors.primary} />
+              {catalogAddons.map((a) => (
+                <View key={`cat-${a.manifest.id}`} style={[styles.addonChip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  <Feather name="grid" size={11} color={colors.primary} />
+                  <Text style={[styles.addonChipText, { color: colors.primary }]}>{a.manifest.name}</Text>
+                </View>
+              ))}
+              {metaAddons.filter((a) => !catalogAddons.some((c) => c.manifest.id === a.manifest.id)).map((a) => (
+                <View key={`meta-${a.manifest.id}`} style={[styles.addonChip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  <Feather name="info" size={11} color={colors.primary} />
                   <Text style={[styles.addonChipText, { color: colors.primary }]}>{a.manifest.name}</Text>
                 </View>
               ))}
               {streamAddons.map((a) => (
-                <View key={a.manifest.id} style={[styles.addonChip, { backgroundColor: colors.surface, borderColor: colors.primary }]}>
+                <View key={`stream-${a.manifest.id}`} style={[styles.addonChip, { backgroundColor: colors.surface, borderColor: colors.primary }]}>
                   <Feather name="play" size={11} color={colors.primary} />
                   <Text style={[styles.addonChipText, { color: colors.primary }]}>{a.manifest.name}</Text>
                 </View>
