@@ -244,6 +244,10 @@ export default function DetailScreen() {
 
   const handleStream = (stream: StremioStream) => {
     if (stream.url) {
+      const routeId = id ?? "";
+      const subtitleId = activeEpisode && routeId.startsWith("tt")
+        ? `${routeId.split(":")[0]}:${activeEpisode.season}:${activeEpisode.episode}`
+        : (activeEpisode?.id ?? routeId);
       router.push({
         pathname: "/player",
         params: {
@@ -251,6 +255,8 @@ export default function DetailScreen() {
           title: activeEpisode
             ? `${meta?.name} · S${activeEpisode.season}E${activeEpisode.episode}`
             : (meta?.name ?? "Stream"),
+          type: type ?? "",
+          subtitleId,
         },
       });
     }

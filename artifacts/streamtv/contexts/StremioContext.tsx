@@ -6,12 +6,14 @@ import {
   StremioAddon,
   StremioMeta,
   StremioStream,
+  StremioSubtitle,
   fetchCatalog,
   fetchCatalogFromAddons,
   fetchCatalogRows,
   fetchMeta,
   fetchMetaFromAddons,
   fetchStreams,
+  fetchSubtitlesFromAddons,
   getUserAddons,
   stremioLogin,
 } from "@/services/stremio";
@@ -31,6 +33,7 @@ interface StremioContextValue {
   getCatalogRows: () => Promise<CatalogRow[]>;
   getDetail: (type: string, id: string) => Promise<StremioMeta | null>;
   getStreams: (type: string, id: string) => Promise<StremioStream[]>;
+  getSubtitles: (type: string, id: string) => Promise<StremioSubtitle[]>;
 }
 
 const StremioContext = createContext<StremioContextValue | null>(null);
@@ -135,9 +138,12 @@ export function StremioProvider({ children }: { children: React.ReactNode }) {
   const getStreams = useCallback((type: string, id: string) =>
     fetchStreams(type, id, addons), [addons]);
 
+  const getSubtitles = useCallback((type: string, id: string) =>
+    fetchSubtitlesFromAddons(type, id, addons), [addons]);
+
   return (
     <StremioContext.Provider
-      value={{ authKey, user, addons, isLoggedIn: !!authKey, isLoading, login, logout, getMovies, getSeries, getCatalogRows, getDetail, getStreams }}
+      value={{ authKey, user, addons, isLoggedIn: !!authKey, isLoading, login, logout, getMovies, getSeries, getCatalogRows, getDetail, getStreams, getSubtitles }}
     >
       {children}
     </StremioContext.Provider>

@@ -297,6 +297,31 @@ export async function fetchMetaFromAddons(
   return null;
 }
 
+export async function fetchSubtitlesFromAddons(
+  type: string,
+  id: string,
+  addons: StremioAddon[]
+): Promise<StremioSubtitle[]> {
+  const subAddons = addons.filter((a) => addonSupportsResource(a, "subtitles"));
+  if (subAddons.length === 0) return [];
+
+  const results = await Promise.allSettled(
+    subAddons.map((addon) => {
+      const baseUrl = addon.transportUrl.replace(/\/manifest\.json$/, "");
+      return fetchWithTimeout(`${baseUrl}/subtitles/${type}/${id}.json`, {}, 10000)
+        .then((res) => (res.ok ? res.json() : { subtitles: [] }))
+        .then((data) => (data?.subtitles ?? []) as StremioSubtitle[])
+        .catch(() => [] as StremioSubtitle[]);
+    })
+  );
+
+  const all: StremioSubtitle[] = [];
+  for (const r of results) {
+    if (r.status === "fulfilled") all.push(...r.value);
+  }
+  return all;
+}
+
 export async function fetchStreams(
   type: string,
   id: string,

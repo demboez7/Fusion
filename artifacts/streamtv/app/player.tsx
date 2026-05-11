@@ -3,7 +3,8 @@ import { useVideoPlayer, VideoView } from "expo-video";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
-  Animated,
+  ActivityIndicator,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -13,20 +14,36 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useStremio } from "@/contexts/StremioContext";
 import { useColors } from "@/hooks/useColors";
+import { StremioSubtitle } from "@/services/stremio";
+
+interface SubtitleOption {
+  id: string;
+  label: string;
+  language: string;
+  external?: boolean;
+  url?: string;
+}
 
 export default function PlayerScreen() {
-  const { url, title } = useLocalSearchParams<{ url: string; title: string }>();
+  const { url, title, type, subtitleId } = useLocalSearchParams<{
+    url: string;
+    title: string;
+    type?: string;
+    subtitleId?: string;
+  }>();
   const router = useRouter();
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const controlsOpacity = useRef(new Animated.Value(1)).current;
-  const controlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { getSubtitles } = useStremio();
 
-  const [showControls, setShowControls] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showSubtitles, setShowSubtitles] = useState(false);
-  const [subtitleTracks, setSubtitleTracks] = useState<{ id: string; label: string; language: string }[]>([]);
+  const [embeddedTracks, setEmbeddedTracks] = useState<SubtitleOption[]>([]);
+  const [addonTracks, setAddonTracks] = useState<SubtitleOption[]>([]);
+  const [loadingAddonSubs, setLoadingAddonSubs] = useState(false);
+  const [addonSubsLoaded, setAddonSubsLoaded] = useState(false);
   const [selectedSubtitle, setSelectedSubtitle] = useState<string | null>(null);
 
   const player = useVideoPlayer(url ?? "", (p) => {
@@ -36,14 +53,16 @@ export default function PlayerScreen() {
   useEffect(() => {
     const errSub = player.addListener("statusChange", (ev) => {
       if (ev.status === "error") {
-        setError("Stream failed to load. This may require an external player.");
+        setError("Stream failed to load. The codec or container may not be supported by Expo Go.");
       }
     });
     const trackSub = player.addListener("availableSubtitleTracksChange" as never, (ev: unknown) => {
       if (ev && typeof ev === "object" && "availableSubtitleTracks" in ev) {
         const tracks = (ev as { availableSubtitleTracks: { id: string; label: string; language: string }[] })
           .availableSubtitleTracks;
-        setSubtitleTracks(tracks ?? []);
+        setEmbeddedTracks(
+          (tracks ?? []).map((t) => ({ id: t.id, label: t.label, language: t.language, external: false }))
+        );
       }
     });
     return () => {
@@ -52,34 +71,57 @@ export default function PlayerScreen() {
     };
   }, [player]);
 
-  const hideControlsAfterDelay = () => {
-    if (controlsTimer.current) clearTimeout(controlsTimer.current);
-    controlsTimer.current = setTimeout(() => {
-      Animated.timing(controlsOpacity, { toValue: 0, duration: 300, useNativeDriver: true }).start(() => {
-        setShowControls(false);
-      });
-    }, 3500);
-  };
-
-  const showControlsNow = () => {
-    setShowControls(true);
-    Animated.timing(controlsOpacity, { toValue: 1, duration: 200, useNativeDriver: true }).start();
-    hideControlsAfterDelay();
-  };
-
-  useEffect(() => {
-    hideControlsAfterDelay();
-    return () => { if (controlsTimer.current) clearTimeout(controlsTimer.current); };
-  }, []);
-
-  const selectSubtitle = (id: string | null) => {
+  const loadAddonSubtitles = async () => {
+    if (addonSubsLoaded || loadingAddonSubs) return;
+    if (!type || !subtitleId) {
+      setAddonSubsLoaded(true);
+      return;
+    }
+    setLoadingAddonSubs(true);
     try {
-      if (id === null) {
+      const subs: StremioSubtitle[] = await getSubtitles(type, subtitleId);
+      setAddonTracks(
+        subs.map((s) => ({
+          id: `addon::${s.id}`,
+          label: s.lang || s.id,
+          language: s.lang || "",
+          external: true,
+          url: s.url,
+        }))
+      );
+    } catch {
+      // ignore — empty list
+    } finally {
+      setLoadingAddonSubs(false);
+      setAddonSubsLoaded(true);
+    }
+  };
+
+  const openSubtitleSheet = () => {
+    setShowSubtitles(true);
+    loadAddonSubtitles();
+  };
+
+  const selectSubtitle = (option: SubtitleOption | null) => {
+    if (option === null) {
+      try {
         (player as unknown as { selectedSubtitleTrack: null }).selectedSubtitleTrack = null;
-      } else {
-        (player as unknown as { selectedSubtitleTrack: string }).selectedSubtitleTrack = id;
-      }
-      setSelectedSubtitle(id);
+      } catch {}
+      setSelectedSubtitle(null);
+      setShowSubtitles(false);
+      return;
+    }
+    if (option.external && option.url) {
+      // expo-video can't attach external SRT/VTT tracks at runtime in Expo Go.
+      // Offer to open the .srt file in the user's preferred app instead.
+      Linking.openURL(option.url).catch(() => {});
+      setSelectedSubtitle(option.id);
+      setShowSubtitles(false);
+      return;
+    }
+    try {
+      (player as unknown as { selectedSubtitleTrack: string }).selectedSubtitleTrack = option.id;
+      setSelectedSubtitle(option.id);
     } catch {}
     setShowSubtitles(false);
   };
@@ -87,7 +129,7 @@ export default function PlayerScreen() {
   if (!url) {
     return (
       <View style={[styles.container, { backgroundColor: "#000" }]}>
-        <View style={styles.overlay}>
+        <View style={styles.centerOverlay}>
           <Feather name="alert-circle" size={40} color={colors.destructive} />
           <Text style={styles.errorText}>No stream URL provided</Text>
           <Pressable style={[styles.retryBtn, { backgroundColor: colors.primary }]} onPress={() => router.back()}>
@@ -98,59 +140,68 @@ export default function PlayerScreen() {
     );
   }
 
+  const allTracks: SubtitleOption[] = [...embeddedTracks, ...addonTracks];
+
+  const openExternal = () => {
+    if (url) Linking.openURL(url).catch(() => {});
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: "#000" }]}>
-      <View style={styles.videoWrapper}>
-        <VideoView
-          player={player}
-          style={styles.video}
-          contentFit="contain"
-          nativeControls
-          fullscreenOptions={{ enable: true }}
-          allowsPictureInPicture
-        />
+      <VideoView
+        player={player}
+        style={styles.video}
+        contentFit="contain"
+        nativeControls
+        fullscreenOptions={{ enable: true }}
+        allowsPictureInPicture
+      />
 
-        {/* Tap-catcher overlay — sits above the video so taps reliably toggle our top bar.
-            pointerEvents="box-only" lets the native controls underneath still receive their own touches. */}
-        <Pressable style={styles.tapCatcher} onPress={showControlsNow} pointerEvents="box-only" />
-
-        {error && (
-          <View style={styles.overlay}>
-            <Feather name="alert-circle" size={40} color={colors.destructive} />
-            <Text style={styles.errorText}>{error}</Text>
-            <Text style={styles.errorHint}>
-              Try opening in VLC or another media player for HLS/MPEG-TS streams.
-            </Text>
-            <Pressable
-              style={[styles.retryBtn, { backgroundColor: colors.primary }]}
-              onPress={() => { setError(null); player.play(); }}
-            >
-              <Text style={[styles.retryText, { color: colors.primaryForeground }]}>Retry</Text>
-            </Pressable>
-          </View>
-        )}
-
-        {showControls && (
-          <Animated.View style={[styles.topBar, { opacity: controlsOpacity, paddingTop: insets.top + 8 }]} pointerEvents="box-none">
-            <Pressable
-              style={[styles.iconBtn, { backgroundColor: "rgba(0,0,0,0.55)" }]}
-              onPress={() => router.back()}
-            >
-              <Feather name="arrow-left" size={22} color="#fff" />
-            </Pressable>
-            <Text style={styles.titleText} numberOfLines={1}>{title}</Text>
-            <Pressable
-              style={[
-                styles.iconBtn,
-                { backgroundColor: selectedSubtitle ? "rgba(30,200,180,0.75)" : "rgba(0,0,0,0.55)" },
-              ]}
-              onPress={() => { setShowSubtitles(true); showControlsNow(); }}
-            >
-              <Feather name="message-square" size={20} color="#fff" />
-            </Pressable>
-          </Animated.View>
-        )}
+      {/* Always-visible top overlay with back + CC. Sits along the very top edge so
+          it never overlaps the native scrub bar (which is at the bottom). */}
+      <View style={[styles.topBar, { paddingTop: insets.top + 6 }]} pointerEvents="box-none">
+        <Pressable
+          style={[styles.iconBtn, { backgroundColor: "rgba(0,0,0,0.55)" }]}
+          onPress={() => router.back()}
+          hitSlop={8}
+        >
+          <Feather name="arrow-left" size={22} color="#fff" />
+        </Pressable>
+        <Text style={styles.titleText} numberOfLines={1}>{title}</Text>
+        <Pressable
+          style={[
+            styles.iconBtn,
+            { backgroundColor: selectedSubtitle ? "rgba(30,200,180,0.75)" : "rgba(0,0,0,0.55)" },
+          ]}
+          onPress={openSubtitleSheet}
+          hitSlop={8}
+        >
+          <Feather name="message-square" size={20} color="#fff" />
+        </Pressable>
       </View>
+
+      {error && (
+        <View style={styles.centerOverlay}>
+          <Feather name="alert-circle" size={40} color={colors.destructive} />
+          <Text style={styles.errorText}>{error}</Text>
+          <Text style={styles.errorHint}>
+            For broader codec support (MKV, AVI, custom HLS, etc.) you can open this stream
+            in VLC or another media player on your device.
+          </Text>
+          <Pressable
+            style={[styles.retryBtn, { backgroundColor: colors.primary }]}
+            onPress={() => { setError(null); player.play(); }}
+          >
+            <Text style={[styles.retryText, { color: colors.primaryForeground }]}>Retry</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.retryBtn, { backgroundColor: "transparent", borderWidth: 1, borderColor: colors.primary }]}
+            onPress={openExternal}
+          >
+            <Text style={[styles.retryText, { color: colors.primary }]}>Open in another app</Text>
+          </Pressable>
+        </View>
+      )}
 
       <Modal
         visible={showSubtitles}
@@ -170,16 +221,15 @@ export default function PlayerScreen() {
               <Feather name={selectedSubtitle === null ? "check-circle" : "circle"} size={18} color={selectedSubtitle === null ? colors.primary : colors.mutedForeground} />
               <Text style={[styles.subtitleLabel, { color: colors.foreground }]}>Off</Text>
             </Pressable>
-            {subtitleTracks.length === 0 && (
-              <Text style={[styles.noSubText, { color: colors.mutedForeground }]}>
-                No subtitle tracks found in this stream.{"\n"}Some streams include embedded subtitles — try a different stream source.
-              </Text>
+
+            {embeddedTracks.length > 0 && (
+              <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Embedded in stream</Text>
             )}
-            {subtitleTracks.map((track) => (
+            {embeddedTracks.map((track) => (
               <Pressable
                 key={track.id}
                 style={[styles.subtitleRow, selectedSubtitle === track.id && { backgroundColor: colors.surface }]}
-                onPress={() => selectSubtitle(track.id)}
+                onPress={() => selectSubtitle(track)}
               >
                 <Feather name={selectedSubtitle === track.id ? "check-circle" : "circle"} size={18} color={selectedSubtitle === track.id ? colors.primary : colors.mutedForeground} />
                 <Text style={[styles.subtitleLabel, { color: colors.foreground }]}>
@@ -187,6 +237,42 @@ export default function PlayerScreen() {
                 </Text>
               </Pressable>
             ))}
+
+            <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>From your subtitle addons</Text>
+            {loadingAddonSubs && (
+              <View style={styles.loadingRow}>
+                <ActivityIndicator color={colors.primary} size="small" />
+                <Text style={[styles.subtitleLabel, { color: colors.mutedForeground }]}>Loading…</Text>
+              </View>
+            )}
+            {!loadingAddonSubs && addonSubsLoaded && addonTracks.length === 0 && (
+              <Text style={[styles.noSubText, { color: colors.mutedForeground }]}>
+                No subtitles found from your installed addons for this title.
+              </Text>
+            )}
+            {addonTracks.map((track) => (
+              <Pressable
+                key={track.id}
+                style={[styles.subtitleRow, selectedSubtitle === track.id && { backgroundColor: colors.surface }]}
+                onPress={() => selectSubtitle(track)}
+              >
+                <Feather name="external-link" size={18} color={colors.mutedForeground} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.subtitleLabel, { color: colors.foreground }]}>
+                    {track.label || track.language}
+                  </Text>
+                  <Text style={[styles.subtitleHint, { color: colors.mutedForeground }]}>
+                    Opens externally — Expo Go can't load .srt files into the player
+                  </Text>
+                </View>
+              </Pressable>
+            ))}
+
+            {allTracks.length === 0 && embeddedTracks.length === 0 && !loadingAddonSubs && addonSubsLoaded && (
+              <Text style={[styles.noSubText, { color: colors.mutedForeground }]}>
+                No embedded subtitle tracks in this stream.
+              </Text>
+            )}
           </ScrollView>
         </View>
       </Modal>
@@ -196,21 +282,19 @@ export default function PlayerScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  videoWrapper: { flex: 1, justifyContent: "center" },
-  video: { width: "100%", height: Platform.OS === "web" ? 400 : "100%" },
-  overlay: {
+  video: { width: "100%", height: Platform.OS === "web" ? 400 : "100%", flex: Platform.OS === "web" ? undefined : 1 },
+  centerOverlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.6)",
+    backgroundColor: "rgba(0,0,0,0.75)",
     gap: 16,
     paddingHorizontal: 32,
   },
   errorText: { color: "#fff", fontSize: 15, textAlign: "center", fontFamily: "Inter_500Medium" },
   errorHint: { color: "rgba(255,255,255,0.6)", fontSize: 12, textAlign: "center", fontFamily: "Inter_400Regular" },
-  retryBtn: { paddingHorizontal: 24, paddingVertical: 10, borderRadius: 8, marginTop: 8 },
+  retryBtn: { paddingHorizontal: 24, paddingVertical: 10, borderRadius: 8, marginTop: 4 },
   retryText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  tapCatcher: { ...StyleSheet.absoluteFillObject },
   topBar: {
     position: "absolute",
     top: 0,
@@ -219,23 +303,26 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    backgroundColor: "rgba(0,0,0,0.35)",
+    paddingHorizontal: 12,
+    paddingBottom: 10,
+    backgroundColor: "rgba(0,0,0,0.45)",
   },
-  iconBtn: { width: 44, height: 44, borderRadius: 22, justifyContent: "center", alignItems: "center" },
-  titleText: { color: "#fff", fontSize: 16, fontFamily: "Inter_600SemiBold", flex: 1, textAlign: "center", marginHorizontal: 8 },
+  iconBtn: { width: 40, height: 40, borderRadius: 20, justifyContent: "center", alignItems: "center" },
+  titleText: { color: "#fff", fontSize: 14, fontFamily: "Inter_600SemiBold", flex: 1, textAlign: "center", marginHorizontal: 8 },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)" },
   subtitleSheet: {
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingTop: 12,
     paddingHorizontal: 20,
-    maxHeight: "60%",
+    maxHeight: "70%",
   },
   sheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: "#555", alignSelf: "center", marginBottom: 16 },
   sheetTitle: { fontSize: 17, fontFamily: "Inter_700Bold", marginBottom: 12 },
-  subtitleRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 14, paddingHorizontal: 8, borderRadius: 8 },
+  sectionLabel: { fontSize: 11, fontFamily: "Inter_600SemiBold", textTransform: "uppercase", marginTop: 16, marginBottom: 6, letterSpacing: 0.5 },
+  subtitleRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, paddingHorizontal: 8, borderRadius: 8 },
   subtitleLabel: { fontSize: 15, fontFamily: "Inter_500Medium" },
-  noSubText: { fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 20, paddingVertical: 16, textAlign: "center" },
+  subtitleHint: { fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 2 },
+  loadingRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 14, paddingHorizontal: 8 },
+  noSubText: { fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 20, paddingVertical: 12, paddingHorizontal: 8 },
 });
