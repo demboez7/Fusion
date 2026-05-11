@@ -84,9 +84,21 @@ export default function SettingsScreen() {
   };
 
   const handleSaveIptv = async () => {
+    const url = iptvInput.trim();
+    if (!url) {
+      Alert.alert("URL required", "Please paste an M3U playlist URL.");
+      return;
+    }
     setSavingIptv(true);
-    try { await setPlaylistUrl(iptvInput.trim()); setShowIptv(false); }
-    catch {} finally { setSavingIptv(false); }
+    try {
+      await setPlaylistUrl(url);
+      setShowIptv(false);
+      Alert.alert("Playlist loaded", "Open the Live TV tab to browse your channels.");
+    } catch (e) {
+      Alert.alert("Failed to load playlist", e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingIptv(false);
+    }
   };
 
   const handleSaveEpg = async () => {

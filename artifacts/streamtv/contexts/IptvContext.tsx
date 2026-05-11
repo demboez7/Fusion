@@ -75,7 +75,11 @@ export function IptvProvider({ children }: { children: React.ReactNode }) {
         }
       }
     } catch (e) {
+      setChannels([]);
+      setGroups({});
+      await AsyncStorage.removeItem(STORAGE_CHANNELS_KEY);
       setError(e instanceof Error ? e.message : "Failed to load playlist");
+      throw e;
     } finally {
       setIsLoading(false);
     }
