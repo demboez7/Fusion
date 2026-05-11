@@ -1,12 +1,13 @@
+import { Feather } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { isLiquidGlassAvailable } from "expo-glass-effect";
 import { Tabs } from "expo-router";
 import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
 import { SymbolView } from "expo-symbols";
-import { Feather } from "@expo/vector-icons";
 import React from "react";
-import { Platform, StyleSheet, View, useColorScheme } from "react-native";
-
+import { Platform, StyleSheet, View } from "react-native";
+import { TvTabBar } from "@/components/TvTabBar";
+import { useSettings } from "@/contexts/SettingsContext";
 import { useColors } from "@/hooks/useColors";
 
 function NativeTabLayout() {
@@ -38,10 +39,24 @@ function NativeTabLayout() {
 
 function ClassicTabLayout() {
   const colors = useColors();
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === "dark";
+  const { isTvMode } = useSettings();
   const isIOS = Platform.OS === "ios";
   const isWeb = Platform.OS === "web";
+
+  if (isTvMode) {
+    return (
+      <Tabs
+        tabBar={(props) => <TvTabBar {...props} />}
+        screenOptions={{ headerShown: false }}
+      >
+        <Tabs.Screen name="index" />
+        <Tabs.Screen name="movies" />
+        <Tabs.Screen name="series" />
+        <Tabs.Screen name="iptv" />
+        <Tabs.Screen name="settings" />
+      </Tabs>
+    );
+  }
 
   return (
     <Tabs
@@ -59,23 +74,11 @@ function ClassicTabLayout() {
         },
         tabBarBackground: () =>
           isIOS ? (
-            <BlurView
-              intensity={90}
-              tint="dark"
-              style={StyleSheet.absoluteFill}
-            />
+            <BlurView intensity={90} tint="dark" style={StyleSheet.absoluteFill} />
           ) : (
-            <View
-              style={[
-                StyleSheet.absoluteFill,
-                { backgroundColor: colors.background },
-              ]}
-            />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.background }]} />
           ),
-        tabBarLabelStyle: {
-          fontFamily: "Inter_500Medium",
-          fontSize: 10,
-        },
+        tabBarLabelStyle: { fontFamily: "Inter_500Medium", fontSize: 10 },
       }}
     >
       <Tabs.Screen
@@ -83,11 +86,7 @@ function ClassicTabLayout() {
         options={{
           title: "Home",
           tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="house" tintColor={color} size={22} />
-            ) : (
-              <Feather name="home" size={22} color={color} />
-            ),
+            isIOS ? <SymbolView name="house" tintColor={color} size={22} /> : <Feather name="home" size={22} color={color} />,
         }}
       />
       <Tabs.Screen
@@ -95,11 +94,7 @@ function ClassicTabLayout() {
         options={{
           title: "Movies",
           tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="film" tintColor={color} size={22} />
-            ) : (
-              <Feather name="film" size={22} color={color} />
-            ),
+            isIOS ? <SymbolView name="film" tintColor={color} size={22} /> : <Feather name="film" size={22} color={color} />,
         }}
       />
       <Tabs.Screen
@@ -107,11 +102,7 @@ function ClassicTabLayout() {
         options={{
           title: "Series",
           tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="play.rectangle" tintColor={color} size={22} />
-            ) : (
-              <Feather name="monitor" size={22} color={color} />
-            ),
+            isIOS ? <SymbolView name="play.rectangle" tintColor={color} size={22} /> : <Feather name="monitor" size={22} color={color} />,
         }}
       />
       <Tabs.Screen
@@ -119,11 +110,7 @@ function ClassicTabLayout() {
         options={{
           title: "Live TV",
           tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="tv" tintColor={color} size={22} />
-            ) : (
-              <Feather name="tv" size={22} color={color} />
-            ),
+            isIOS ? <SymbolView name="tv" tintColor={color} size={22} /> : <Feather name="tv" size={22} color={color} />,
         }}
       />
       <Tabs.Screen
@@ -131,11 +118,7 @@ function ClassicTabLayout() {
         options={{
           title: "Settings",
           tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="gearshape" tintColor={color} size={22} />
-            ) : (
-              <Feather name="settings" size={22} color={color} />
-            ),
+            isIOS ? <SymbolView name="gearshape" tintColor={color} size={22} /> : <Feather name="settings" size={22} color={color} />,
         }}
       />
     </Tabs>
@@ -143,8 +126,6 @@ function ClassicTabLayout() {
 }
 
 export default function TabLayout() {
-  if (isLiquidGlassAvailable()) {
-    return <NativeTabLayout />;
-  }
+  if (isLiquidGlassAvailable()) return <NativeTabLayout />;
   return <ClassicTabLayout />;
 }
