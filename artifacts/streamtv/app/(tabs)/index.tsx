@@ -2,7 +2,7 @@ import { Feather } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Pressable,
   RefreshControl,
@@ -29,7 +29,7 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { width } = useWindowDimensions();
-  const { getMovies, getSeries } = useStremio();
+  const { getMovies, getSeries, isLoading: stremioLoading } = useStremio();
   const { channels } = useIptv();
   const { isTvMode } = useSettings();
 
@@ -43,20 +43,28 @@ export default function HomeScreen() {
   const cardWidth = isTvMode ? 180 : 120;
   const tvHeroHeight = isTvMode ? Math.round(width * 0.42) : 420;
 
-  const loadContent = async () => {
+  const loadContent = useCallback(async () => {
     setLoadingMovies(true);
     setLoadingSeries(true);
     try {
       const [m, s] = await Promise.all([getMovies(), getSeries()]);
-      setMovies(m);
-      setSeries(s);
-      if (m.length > 0) setHero(m[Math.floor(Math.random() * Math.min(5, m.length))]);
+      const seen_m = new Set<string>();
+      const deduped_m = m.filter((x) => { if (seen_m.has(x.id)) return false; seen_m.add(x.id); return true; });
+      const seen_s = new Set<string>();
+      const deduped_s = s.filter((x) => { if (seen_s.has(x.id)) return false; seen_s.add(x.id); return true; });
+      setMovies(deduped_m);
+      setSeries(deduped_s);
+      if (deduped_m.length > 0) setHero(deduped_m[Math.floor(Math.random() * Math.min(5, deduped_m.length))]);
     } catch {}
     setLoadingMovies(false);
     setLoadingSeries(false);
-  };
+  }, [getMovies, getSeries]);
 
-  useEffect(() => { loadContent(); }, []);
+  useEffect(() => {
+    if (!stremioLoading) {
+      loadContent();
+    }
+  }, [loadContent, stremioLoading]);
 
   const onRefresh = async () => {
     setRefreshing(true);
