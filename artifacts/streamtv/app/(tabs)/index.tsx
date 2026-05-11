@@ -161,7 +161,7 @@ export default function HomeScreen() {
           rows.map((row) => (
             <CategoryRow
               key={row.key}
-              title={`${row.addonName} · ${row.catalogName}`}
+              title={`${row.addonName} · ${row.catalogName}${row.type === "movie" ? " · Movies" : row.type === "series" ? " · Series" : row.type === "anime" ? " · Anime" : ""}`}
               data={row.items.slice(0, 20)}
               keyExtractor={(m) => `${row.key}-${m.id}`}
               renderItem={({ item }) =>

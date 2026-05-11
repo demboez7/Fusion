@@ -104,12 +104,19 @@ export function StremioProvider({ children }: { children: React.ReactNode }) {
   }, [addons]);
 
   const getDetail = useCallback(async (type: string, id: string): Promise<StremioMeta | null> => {
-    const imdbId = id.split(":")[0];
-    const [cinemeta, addonMeta] = await Promise.all([
-      fetchMeta(type, imdbId).catch(() => null),
-      addons.length > 0 ? fetchMetaFromAddons(type, imdbId, addons).catch(() => null) : Promise.resolve(null),
-    ]);
+    // For IMDB ids (tt…), strip any episode suffix (tt12345:1:2 → tt12345).
+    // For non-IMDB ids (tmdb:12345, kitsu:anime:42), keep the full id — it IS the meta id.
+    const isImdb = id.startsWith("tt");
+    const lookupId = isImdb ? id.split(":")[0] : id;
 
+    const cinemetaPromise = isImdb
+      ? fetchMeta(type, lookupId).catch(() => null)
+      : Promise.resolve(null);
+    const addonPromise = addons.length > 0
+      ? fetchMetaFromAddons(type, lookupId, addons).catch(() => null)
+      : Promise.resolve(null);
+
+    const [cinemeta, addonMeta] = await Promise.all([cinemetaPromise, addonPromise]);
     if (!cinemeta && !addonMeta) return null;
 
     const base = cinemeta ?? addonMeta!;
