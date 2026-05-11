@@ -29,7 +29,7 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { width } = useWindowDimensions();
-  const { getMovies, getSeries, isLoading: stremioLoading } = useStremio();
+  const { getMovies, getSeries, addons, isLoading: stremioLoading } = useStremio();
   const { channels } = useIptv();
   const { isTvMode } = useSettings();
 
@@ -43,7 +43,7 @@ export default function HomeScreen() {
   const cardWidth = isTvMode ? 180 : 120;
   const tvHeroHeight = isTvMode ? Math.round(width * 0.42) : 420;
 
-  const loadContent = useCallback(async () => {
+  const doLoad = async () => {
     setLoadingMovies(true);
     setLoadingSeries(true);
     try {
@@ -58,17 +58,18 @@ export default function HomeScreen() {
     } catch {}
     setLoadingMovies(false);
     setLoadingSeries(false);
-  }, [getMovies, getSeries]);
+  };
 
+  // Re-run whenever stremio finishes its initial load OR addons change (login/logout)
   useEffect(() => {
-    if (!stremioLoading) {
-      loadContent();
-    }
-  }, [loadContent, stremioLoading]);
+    if (stremioLoading) return;
+    doLoad();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stremioLoading, addons]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadContent();
+    await doLoad();
     setRefreshing(false);
   };
 

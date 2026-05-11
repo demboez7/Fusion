@@ -39,16 +39,22 @@ export function StremioProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_AUTH_KEY).then((raw) => {
-      if (raw) {
-        const parsed = JSON.parse(raw) as { authKey: string; user: LoginResult["user"] };
-        setAuthKey(parsed.authKey);
-        setUser(parsed.user);
-        getUserAddons(parsed.authKey)
-          .then(setAddons)
-          .catch(() => {});
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(STORAGE_AUTH_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw) as { authKey: string; user: LoginResult["user"] };
+          setAuthKey(parsed.authKey);
+          setUser(parsed.user);
+          try {
+            const userAddons = await getUserAddons(parsed.authKey);
+            setAddons(userAddons);
+          } catch {}
+        }
+      } finally {
+        setIsLoading(false);
       }
-    }).finally(() => setIsLoading(false));
+    })();
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
