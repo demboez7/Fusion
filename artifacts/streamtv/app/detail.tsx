@@ -5,6 +5,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -32,6 +33,9 @@ interface AddonStatus {
   durationMs: number;
   httpStatus?: number;
   errorMessage?: string;
+  transportUrl?: string;
+  requestUrls?: string[];
+  responseSnippet?: string;
 }
 
 interface SeasonEpisode {
@@ -261,6 +265,9 @@ export default function DetailScreen() {
             durationMs: p.durationMs,
             httpStatus: p.httpStatus,
             errorMessage: p.errorMessage,
+            transportUrl: p.transportUrl,
+            requestUrls: p.requestUrls,
+            responseSnippet: p.responseSnippet,
           });
           return next;
         });
@@ -655,10 +662,45 @@ function AddonStatusList({
               : s.count === 0
                 ? `no streams · ${(s.durationMs / 1000).toFixed(1)}s`
                 : `${s.count} stream${s.count === 1 ? "" : "s"} · ${(s.durationMs / 1000).toFixed(1)}s`;
+        const onPressDetail = () => {
+          const lines: string[] = [
+            `Addon: ${s.addonName}`,
+            `ID: ${s.addonId}`,
+            "",
+            `Status: ${s.status}${s.count > 0 ? ` · ${s.count} streams` : ""}`,
+            `Time: ${(s.durationMs / 1000).toFixed(1)}s`,
+          ];
+          if (s.httpStatus !== undefined) lines.push(`HTTP: ${s.httpStatus}`);
+          if (s.errorMessage) lines.push(`Error: ${s.errorMessage}`);
+          if (s.transportUrl) {
+            lines.push("", "Transport URL:", s.transportUrl);
+          }
+          if (s.requestUrls && s.requestUrls.length > 0) {
+            lines.push("", `Requested ${s.requestUrls.length} URL(s):`);
+            for (const u of s.requestUrls) lines.push(u);
+          }
+          if (s.responseSnippet) {
+            lines.push("", "Response (first 200 chars):", s.responseSnippet);
+          }
+          if (s.status === "done" && s.count === 0 && s.transportUrl) {
+            const hasConfig = /=\*\*\*|\/[A-Za-z0-9_-]{20,}\//.test(s.transportUrl);
+            if (!hasConfig) {
+              lines.push(
+                "",
+                "⚠ No config segment detected in transport URL — this addon may be installed without a Real-Debrid token. Re-install/configure it on web.stremio.com."
+              );
+            }
+          }
+          Alert.alert(s.addonName, lines.join("\n"));
+        };
         return (
-          <View
+          <Pressable
             key={s.addonId}
-            style={[styles.addonStatusRow, { backgroundColor: colors.card, borderColor: colors.border }]}
+            style={({ pressed }) => [
+              styles.addonStatusRow,
+              { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
+            ]}
+            onPress={onPressDetail}
           >
             {isLoading ? (
               <ActivityIndicator size="small" color={colors.primary} />
@@ -671,7 +713,7 @@ function AddonStatusList({
             <Text style={[styles.addonStatusDetail, { color: isDone && s.count > 0 ? colors.primary : colors.mutedForeground }]} numberOfLines={1}>
               {detail}
             </Text>
-          </View>
+          </Pressable>
         );
       })}
     </View>

@@ -135,6 +135,19 @@ export interface AddonStreamProgress {
   durationMs: number;
   httpStatus?: number;
   errorMessage?: string;
+  // Diagnostic info: the addon's transport URL prefix (with secrets
+  // redacted) and the actual /stream/... URL(s) we hit. Used by the
+  // detail screen to show users why a given addon returned no streams.
+  transportUrl?: string;
+  requestUrls?: string[];
+  responseSnippet?: string;
+}
+
+// Mask any long alphanumeric token following an "=" sign so RD/AD/Premiumize
+// keys are not visible in the diagnostic Alert. Tokens of 12+ chars are
+// replaced with "***".
+export function redactAddonUrl(url: string): string {
+  return url.replace(/=([A-Za-z0-9]{12,})/g, "=***");
 }
 
 export interface LoginResult {
@@ -433,6 +446,8 @@ export function fetchStreamsProgressive(
       ok: boolean;
       timedOut: boolean;
       errorMessage?: string;
+      requestUrl: string;
+      responseSnippet?: string;
     }
 
     const runOne = (tryId: string): Promise<PerIdResult> => {
@@ -451,21 +466,46 @@ export function fetchStreamsProgressive(
             console.warn(
               `[stremio] ${addonName} ${reqUrl} -> HTTP ${httpStatus}${snippet ? ` body: ${snippet}` : ""}`
             );
-            return { streams: [], httpStatus, ok: false, timedOut: false, errorMessage: `HTTP ${httpStatus}` };
+            return {
+              streams: [],
+              httpStatus,
+              ok: false,
+              timedOut: false,
+              errorMessage: `HTTP ${httpStatus}`,
+              requestUrl: reqUrl,
+              responseSnippet: snippet,
+            };
           }
           let data: { streams?: StremioStream[] } = {};
+          let rawText = "";
           try {
-            data = await res.json();
+            rawText = await res.text();
+            data = rawText ? JSON.parse(rawText) : {};
           } catch (e) {
             const msg = e instanceof Error ? e.message : "invalid JSON";
             // eslint-disable-next-line no-console
             console.warn(`[stremio] ${addonName} ${reqUrl} -> parse error: ${msg}`);
-            return { streams: [], httpStatus, ok: false, timedOut: false, errorMessage: "bad response" };
+            return {
+              streams: [],
+              httpStatus,
+              ok: false,
+              timedOut: false,
+              errorMessage: "bad response",
+              requestUrl: reqUrl,
+              responseSnippet: rawText.slice(0, 200),
+            };
           }
           const streams = (data?.streams ?? []) as StremioStream[];
           // eslint-disable-next-line no-console
           console.log(`[stremio] ${addonName} ${reqUrl} -> 200 OK with ${streams.length} streams`);
-          return { streams, httpStatus, ok: true, timedOut: false };
+          return {
+            streams,
+            httpStatus,
+            ok: true,
+            timedOut: false,
+            requestUrl: reqUrl,
+            responseSnippet: streams.length === 0 ? rawText.slice(0, 200) : undefined,
+          };
         })
         .catch((err: unknown): PerIdResult => {
           const aborted =
@@ -476,7 +516,13 @@ export function fetchStreamsProgressive(
               : "network error";
           // eslint-disable-next-line no-console
           console.warn(`[stremio] ${addonName} ${reqUrl} -> ${aborted ? "timeout" : message}`);
-          return { streams: [], ok: false, timedOut: !!aborted, errorMessage: aborted ? "timeout" : message };
+          return {
+            streams: [],
+            ok: false,
+            timedOut: !!aborted,
+            errorMessage: aborted ? "timeout" : message,
+            requestUrl: reqUrl,
+          };
         });
     };
 
@@ -503,6 +549,7 @@ export function fetchStreamsProgressive(
       const httpStatus = results.find((r) => r.httpStatus !== undefined)?.httpStatus;
       const errorMessage =
         status === "done" ? undefined : errResult?.errorMessage ?? (anyTimeout ? "timeout" : "failed");
+      const responseSnippet = results.find((r) => r.responseSnippet)?.responseSnippet;
       onAddon({
         addonId,
         addonName,
@@ -511,6 +558,9 @@ export function fetchStreamsProgressive(
         durationMs: Date.now() - startedAt,
         httpStatus,
         errorMessage,
+        transportUrl: redactAddonUrl(addon.transportUrl),
+        requestUrls: results.map((r) => redactAddonUrl(r.requestUrl)),
+        responseSnippet,
       });
     });
     tasks.push(task);
