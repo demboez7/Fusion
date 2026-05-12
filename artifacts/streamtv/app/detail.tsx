@@ -30,6 +30,8 @@ interface AddonStatus {
   status: "loading" | "done" | "error" | "timeout";
   count: number;
   durationMs: number;
+  httpStatus?: number;
+  errorMessage?: string;
 }
 
 interface SeasonEpisode {
@@ -237,6 +239,8 @@ export default function DetailScreen() {
             status: p.status,
             count: p.streams.length,
             durationMs: p.durationMs,
+            httpStatus: p.httpStatus,
+            errorMessage: p.errorMessage,
           });
           return next;
         });
@@ -625,9 +629,9 @@ function AddonStatusList({
         const detail = isLoading
           ? "searching…"
           : s.status === "timeout"
-            ? "timed out"
+            ? `timed out · ${(s.durationMs / 1000).toFixed(1)}s`
             : s.status === "error"
-              ? "failed"
+              ? `${s.errorMessage ?? "failed"} · ${(s.durationMs / 1000).toFixed(1)}s`
               : s.count === 0
                 ? `no streams · ${(s.durationMs / 1000).toFixed(1)}s`
                 : `${s.count} stream${s.count === 1 ? "" : "s"} · ${(s.durationMs / 1000).toFixed(1)}s`;

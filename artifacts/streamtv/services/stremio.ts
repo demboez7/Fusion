@@ -1,19 +1,22 @@
 const STREMIO_API = "https://api.strem.io/api";
 const CINEMETA_URL = "https://v3-cinemeta.strem.io";
 
-// Many Stremio addons (especially Real-Debrid variants like Torrentio,
-// Comet, Jackettio, Peerflix, Sootio, etc.) filter requests by User-Agent
-// and return an empty stream array unless the request looks like it came
-// from the official Stremio client. okhttp's default UA gets ignored. We
-// mimic the desktop client UA so the addons treat us as a real Stremio
-// install.
-const STREMIO_UA = "Stremio/4.4.168 (Linux x86_64) Chrome/106.0.5249.199";
+// Many Stremio addons (Real-Debrid variants like Torrentio, Comet,
+// Jackettio, Peerflix, Sootio, etc.) filter incoming requests by
+// User-Agent / Origin / Referer and silently return an empty stream
+// array unless the request looks like it came from the official
+// Stremio desktop or web client. We mimic the desktop Electron shell
+// UA + the web client's Origin/Referer.
+const STREMIO_UA =
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) stremio-shell/4.4.168 Chrome/106.0.5249.199 Electron/21.4.0 Safari/537.36";
 
 function addonHeaders(extra?: Record<string, string>): Record<string, string> {
   return {
     "User-Agent": STREMIO_UA,
-    Accept: "application/json",
+    Accept: "application/json, text/plain, */*",
     "Accept-Language": "en-US,en;q=0.9,he;q=0.8",
+    Origin: "https://web.stremio.com",
+    Referer: "https://web.stremio.com/",
     ...(extra ?? {}),
   };
 }
@@ -125,6 +128,8 @@ export interface AddonStreamProgress {
   status: "loading" | "done" | "error" | "timeout";
   streams: StremioStream[];
   durationMs: number;
+  httpStatus?: number;
+  errorMessage?: string;
 }
 
 export interface LoginResult {
@@ -387,27 +392,90 @@ export function fetchStreamsProgressive(
 
     onAddon({ addonId, addonName, status: "loading", streams: [], durationMs: 0 });
 
-    const task = fetchAddon(`${baseUrl}/stream/${type}/${id}.json`, perAddonTimeoutMs)
-      .then((res) => (res.ok ? res.json() : { streams: [] }))
-      .then((data) => {
+    const reqUrl = `${baseUrl}/stream/${type}/${id}.json`;
+    const task = fetchAddon(reqUrl, perAddonTimeoutMs)
+      .then(async (res) => {
+        const httpStatus = res.status;
+        if (!res.ok) {
+          // Read a short body snippet for debugging (Cloudflare challenge
+          // pages, "forbidden" text, etc.) — visible via adb logcat.
+          let snippet = "";
+          try {
+            snippet = (await res.text()).slice(0, 200);
+          } catch {
+            // ignore
+          }
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[stremio] ${addonName} ${reqUrl} -> HTTP ${httpStatus}${snippet ? ` body: ${snippet}` : ""}`
+          );
+          onAddon({
+            addonId,
+            addonName,
+            status: "error",
+            streams: [],
+            durationMs: Date.now() - startedAt,
+            httpStatus,
+            errorMessage: `HTTP ${httpStatus}`,
+          });
+          return;
+        }
+        let data: { streams?: StremioStream[] } = {};
+        let parseError: string | null = null;
+        try {
+          data = await res.json();
+        } catch (e) {
+          parseError = e instanceof Error ? e.message : "invalid JSON";
+        }
+        if (parseError) {
+          // eslint-disable-next-line no-console
+          console.warn(`[stremio] ${addonName} ${reqUrl} -> parse error: ${parseError}`);
+          onAddon({
+            addonId,
+            addonName,
+            status: "error",
+            streams: [],
+            durationMs: Date.now() - startedAt,
+            httpStatus,
+            errorMessage: "bad response",
+          });
+          return;
+        }
         const streams = (data?.streams ?? []) as StremioStream[];
+        if (streams.length === 0) {
+          // Log empty responses too — helps diagnose whether the addon
+          // really has nothing for this id or is filtering us out.
+          // eslint-disable-next-line no-console
+          console.log(`[stremio] ${addonName} ${reqUrl} -> 200 OK with 0 streams`);
+        } else {
+          // eslint-disable-next-line no-console
+          console.log(`[stremio] ${addonName} ${reqUrl} -> 200 OK with ${streams.length} streams`);
+        }
         onAddon({
           addonId,
           addonName,
           status: "done",
           streams,
           durationMs: Date.now() - startedAt,
+          httpStatus,
         });
       })
       .catch((err: unknown) => {
         const aborted =
           err && typeof err === "object" && "name" in err && (err as { name: string }).name === "AbortError";
+        const message =
+          err && typeof err === "object" && "message" in err
+            ? String((err as { message: unknown }).message)
+            : "network error";
+        // eslint-disable-next-line no-console
+        console.warn(`[stremio] ${addonName} ${reqUrl} -> ${aborted ? "timeout" : message}`);
         onAddon({
           addonId,
           addonName,
           status: aborted ? "timeout" : "error",
           streams: [],
           durationMs: Date.now() - startedAt,
+          errorMessage: aborted ? "timeout" : message,
         });
       });
     tasks.push(task);
