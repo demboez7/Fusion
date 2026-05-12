@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import {
+  AddonStreamProgress,
   CatalogRow,
   LoginResult,
   StremioAddon,
@@ -14,6 +15,7 @@ import {
   fetchMeta,
   fetchMetaFromAddons,
   fetchStreams,
+  fetchStreamsProgressive,
   fetchSubtitlesFromAddons,
   getUserAddons,
   stremioLogin,
@@ -34,7 +36,13 @@ interface StremioContextValue {
   getCatalogRows: () => Promise<CatalogRow[]>;
   getDetail: (type: string, id: string) => Promise<StremioMeta | null>;
   getStreams: (type: string, id: string) => Promise<StremioStream[]>;
+  getStreamsProgressive: (
+    type: string,
+    id: string,
+    onAddon: (p: AddonStreamProgress) => void
+  ) => Promise<void>;
   getSubtitles: (type: string, id: string) => Promise<StremioSubtitle[]>;
+  streamAddonsCount: number;
   subtitleAddonsCount: number;
 }
 
@@ -140,12 +148,24 @@ export function StremioProvider({ children }: { children: React.ReactNode }) {
   const getStreams = useCallback((type: string, id: string) =>
     fetchStreams(type, id, addons), [addons]);
 
+  const getStreamsProgressive = useCallback(
+    (type: string, id: string, onAddon: (p: AddonStreamProgress) => void) =>
+      fetchStreamsProgressive(type, id, addons, onAddon),
+    [addons]
+  );
+
   const getSubtitles = useCallback((type: string, id: string) =>
     fetchSubtitlesFromAddons(type, id, addons), [addons]);
 
   return (
     <StremioContext.Provider
-      value={{ authKey, user, addons, isLoggedIn: !!authKey, isLoading, login, logout, getMovies, getSeries, getCatalogRows, getDetail, getStreams, getSubtitles, subtitleAddonsCount: addons.filter((a) => addonSupportsResource(a, "subtitles")).length }}
+      value={{
+        authKey, user, addons, isLoggedIn: !!authKey, isLoading,
+        login, logout, getMovies, getSeries, getCatalogRows, getDetail,
+        getStreams, getStreamsProgressive, getSubtitles,
+        subtitleAddonsCount: addons.filter((a) => addonSupportsResource(a, "subtitles")).length,
+        streamAddonsCount: addons.filter((a) => addonSupportsResource(a, "stream")).length,
+      }}
     >
       {children}
     </StremioContext.Provider>

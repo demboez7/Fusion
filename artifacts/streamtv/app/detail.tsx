@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useStremio } from "@/contexts/StremioContext";
 import { useColors } from "@/hooks/useColors";
-import { StremioMeta, StremioStream, StremioVideo } from "@/services/stremio";
+import { AddonStreamProgress, StremioMeta, StremioStream, StremioVideo } from "@/services/stremio";
 import {
   TmdbEpisode,
   findTmdbIdFromImdb,
@@ -24,7 +24,13 @@ import {
   tmdbPoster,
 } from "@/services/tmdb";
 
-const STREAM_TIMEOUT_MS = 35000;
+interface AddonStatus {
+  addonId: string;
+  addonName: string;
+  status: "loading" | "done" | "error" | "timeout";
+  count: number;
+  durationMs: number;
+}
 
 interface SeasonEpisode {
   id: string;
@@ -84,7 +90,7 @@ export default function DetailScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { getDetail, getStreams, addons, isLoggedIn } = useStremio();
+  const { getDetail, getStreamsProgressive, addons, isLoggedIn } = useStremio();
   const { useTmdb } = useSettings();
 
   const streamAddons = addons.filter((a) => {
@@ -123,6 +129,7 @@ export default function DetailScreen() {
   const [streamError, setStreamError] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [activeEpisode, setActiveEpisode] = useState<SeasonEpisode | null>(null);
+  const [addonStatuses, setAddonStatuses] = useState<AddonStatus[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const bgImage = meta?.background ?? meta?.poster;
@@ -197,23 +204,52 @@ export default function DetailScreen() {
     setLoadingStreams(true);
     setStreamError(null);
     setStreams([]);
+    setAddonStatuses([]);
     setElapsed(0);
     timerRef.current = setInterval(() => setElapsed((e) => e + 1), 1000);
-    const timeout = new Promise<StremioStream[]>((res) =>
-      setTimeout(() => res([]), STREAM_TIMEOUT_MS)
-    );
+
+    if (!isLoggedIn) {
+      setStreamError(
+        "Sign in to your Stremio account in Settings to load streams from your installed addons."
+      );
+      setLoadingStreams(false);
+      setStreamsLoaded(true);
+      if (timerRef.current) clearInterval(timerRef.current);
+      return;
+    }
+    if (streamAddons.length === 0) {
+      setStreamError(
+        "No stream addons installed. Add a stream addon (e.g. Torrentio) in the Stremio app, then come back."
+      );
+      setLoadingStreams(false);
+      setStreamsLoaded(true);
+      if (timerRef.current) clearInterval(timerRef.current);
+      return;
+    }
+
     try {
-      const result = await Promise.race([getStreams(type, sid), timeout]);
-      setStreams(result);
-      if (result.length === 0) {
-        if (!isLoggedIn) {
-          setStreamError("Sign in to your Stremio account in Settings to load streams from your installed addons.");
-        } else if (streamAddons.length === 0) {
-          setStreamError("No stream addons installed. Add a stream addon (e.g. Torrentio) in the Stremio app, then come back.");
-        } else {
+      await getStreamsProgressive(type, sid, (p: AddonStreamProgress) => {
+        setAddonStatuses((prev) => {
+          const next = prev.filter((a) => a.addonId !== p.addonId);
+          next.push({
+            addonId: p.addonId,
+            addonName: p.addonName,
+            status: p.status,
+            count: p.streams.length,
+            durationMs: p.durationMs,
+          });
+          return next;
+        });
+        if (p.status === "done" && p.streams.length > 0) {
+          setStreams((prev) => [...prev, ...p.streams]);
+        }
+      });
+      setStreams((current) => {
+        if (current.length === 0) {
           setStreamError("No streams found from your installed addons for this title.");
         }
-      }
+        return current;
+      });
     } catch {
       setStreamError("Failed to fetch streams. Check your connection.");
     } finally {
@@ -239,11 +275,13 @@ export default function DetailScreen() {
     if (activeEpisode?.id === ep.id) {
       setActiveEpisode(null);
       setStreams([]);
+      setAddonStatuses([]);
       setStreamsLoaded(false);
       return;
     }
     setActiveEpisode(ep);
     setStreams([]);
+    setAddonStatuses([]);
     setStreamsLoaded(false);
     const routeId = id ?? "";
     const streamId = routeId.startsWith("tt")
@@ -410,7 +448,7 @@ export default function DetailScreen() {
           </Pressable>
         )}
 
-        {!isSeries && streamsLoaded && (
+        {!isSeries && (loadingStreams || streamsLoaded) && (
           <StreamsList
             streams={streams}
             loadingStreams={loadingStreams}
@@ -418,6 +456,7 @@ export default function DetailScreen() {
             elapsed={elapsed}
             onPress={handleStream}
             colors={colors}
+            addonStatuses={addonStatuses}
           />
         )}
 
@@ -444,7 +483,7 @@ export default function DetailScreen() {
                       borderColor: selectedSeason === s ? colors.primary : colors.border,
                     },
                   ]}
-                  onPress={() => { setSelectedSeason(s); setActiveEpisode(null); setStreams([]); setStreamsLoaded(false); }}
+                  onPress={() => { setSelectedSeason(s); setActiveEpisode(null); setStreams([]); setAddonStatuses([]); setStreamsLoaded(false); }}
                 >
                   <Text style={[styles.seasonChipText, { color: selectedSeason === s ? colors.primaryForeground : colors.foreground }]}>
                     S{s}
@@ -496,7 +535,7 @@ export default function DetailScreen() {
                       )}
                     </Pressable>
 
-                    {isActive && streamsLoaded && (
+                    {isActive && (loadingStreams || streamsLoaded) && (
                       <View style={[styles.inlineStreams, { backgroundColor: colors.background, borderColor: colors.border }]}>
                         <StreamsList
                           streams={streams}
@@ -505,6 +544,7 @@ export default function DetailScreen() {
                           elapsed={elapsed}
                           onPress={handleStream}
                           colors={colors}
+                          addonStatuses={addonStatuses}
                           compact
                         />
                       </View>
@@ -545,8 +585,8 @@ export default function DetailScreen() {
                 )}
               </Pressable>
             )}
-            {streamsLoaded && (
-              <StreamsList streams={streams} loadingStreams={loadingStreams} streamError={streamError} elapsed={elapsed} onPress={handleStream} colors={colors} />
+            {(loadingStreams || streamsLoaded) && (
+              <StreamsList streams={streams} loadingStreams={loadingStreams} streamError={streamError} elapsed={elapsed} onPress={handleStream} colors={colors} addonStatuses={addonStatuses} />
             )}
           </>
         )}
@@ -555,11 +595,72 @@ export default function DetailScreen() {
   );
 }
 
+function AddonStatusList({
+  statuses,
+  colors,
+}: {
+  statuses: AddonStatus[];
+  colors: ReturnType<typeof import("@/hooks/useColors").useColors>;
+}) {
+  if (statuses.length === 0) return null;
+  // Stable order: loading first, then by name.
+  const sorted = [...statuses].sort((a, b) => {
+    if (a.status === "loading" && b.status !== "loading") return -1;
+    if (b.status === "loading" && a.status !== "loading") return 1;
+    return a.addonName.localeCompare(b.addonName);
+  });
+  return (
+    <View style={styles.addonStatusList}>
+      {sorted.map((s) => {
+        const isLoading = s.status === "loading";
+        const isDone = s.status === "done";
+        const isErr = s.status === "error" || s.status === "timeout";
+        const dotColor = isLoading
+          ? colors.mutedForeground
+          : isErr
+            ? colors.destructive
+            : s.count > 0
+              ? colors.primary
+              : colors.mutedForeground;
+        const detail = isLoading
+          ? "searching…"
+          : s.status === "timeout"
+            ? "timed out"
+            : s.status === "error"
+              ? "failed"
+              : s.count === 0
+                ? `no streams · ${(s.durationMs / 1000).toFixed(1)}s`
+                : `${s.count} stream${s.count === 1 ? "" : "s"} · ${(s.durationMs / 1000).toFixed(1)}s`;
+        return (
+          <View
+            key={s.addonId}
+            style={[styles.addonStatusRow, { backgroundColor: colors.card, borderColor: colors.border }]}
+          >
+            {isLoading ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
+            )}
+            <Text style={[styles.addonStatusName, { color: colors.foreground }]} numberOfLines={1}>
+              {s.addonName}
+            </Text>
+            <Text style={[styles.addonStatusDetail, { color: isDone && s.count > 0 ? colors.primary : colors.mutedForeground }]} numberOfLines={1}>
+              {detail}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 function StreamsList({
   streams,
+  loadingStreams,
   streamError,
   onPress,
   colors,
+  addonStatuses,
   compact = false,
 }: {
   streams: StremioStream[];
@@ -568,20 +669,27 @@ function StreamsList({
   elapsed: number;
   onPress: (s: StremioStream) => void;
   colors: ReturnType<typeof import("@/hooks/useColors").useColors>;
+  addonStatuses: AddonStatus[];
   compact?: boolean;
 }) {
   const direct = streams.filter((s) => !!s.url);
   const torrentOnly = streams.filter((s) => !s.url && !!s.infoHash);
+  const loadingCount = addonStatuses.filter((a) => a.status === "loading").length;
+  const totalCount = addonStatuses.length;
 
   return (
     <View style={compact ? styles.streamsSectionCompact : styles.streamsSection}>
-      {!compact && (
+      {!compact && totalCount > 0 && (
         <Text style={[styles.streamsSubtitle, { color: colors.mutedForeground }]}>
-          {direct.length} playable · {torrentOnly.length} torrent-only
+          {loadingCount > 0
+            ? `${totalCount - loadingCount}/${totalCount} addons · ${direct.length} playable so far`
+            : `${direct.length} playable · ${torrentOnly.length} torrent-only · all ${totalCount} addons checked`}
         </Text>
       )}
 
-      {streamError ? (
+      <AddonStatusList statuses={addonStatuses} colors={colors} />
+
+      {streamError && !loadingStreams ? (
         <View style={[styles.noStreams, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Feather name="info" size={16} color={colors.mutedForeground} />
           <Text style={[styles.noStreamsText, { color: colors.mutedForeground }]}>{streamError}</Text>
@@ -683,4 +791,9 @@ const styles = StyleSheet.create({
   addonRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   addonChip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, borderWidth: 1 },
   addonChipText: { fontSize: 11, fontFamily: "Inter_500Medium" },
+  addonStatusList: { gap: 4, marginBottom: 4 },
+  addonStatusRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, borderWidth: 1 },
+  statusDot: { width: 8, height: 8, borderRadius: 4 },
+  addonStatusName: { flex: 1, fontSize: 12, fontFamily: "Inter_500Medium" },
+  addonStatusDetail: { fontSize: 11, fontFamily: "Inter_400Regular" },
 });

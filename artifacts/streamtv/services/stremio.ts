@@ -87,6 +87,20 @@ export interface StremioSubtitle {
   id: string;
   url: string;
   lang: string;
+  // Some addons include extra metadata in the subtitle object — keep them
+  // optional so we can display nicer labels when available.
+  name?: string;
+  title?: string;
+  m?: string;
+  SubFormat?: string;
+}
+
+export interface AddonStreamProgress {
+  addonId: string;
+  addonName: string;
+  status: "loading" | "done" | "error" | "timeout";
+  streams: StremioStream[];
+  durationMs: number;
 }
 
 export interface LoginResult {
@@ -320,6 +334,58 @@ export async function fetchSubtitlesFromAddons(
     if (r.status === "fulfilled") all.push(...r.value);
   }
   return all;
+}
+
+export function fetchStreamsProgressive(
+  type: string,
+  id: string,
+  addons: StremioAddon[],
+  onAddon: (progress: AddonStreamProgress) => void,
+  perAddonTimeoutMs = 30000
+): Promise<void> {
+  const tasks: Promise<void>[] = [];
+  for (const addon of addons) {
+    if (!addonSupportsResource(addon, "stream")) continue;
+    const types = addon.manifest?.types ?? [];
+    if (!types.includes(type)) continue;
+
+    const addonId = addon.manifest?.id ?? addon.transportUrl;
+    const addonName = addon.manifest?.name ?? "Addon";
+    const baseUrl = addon.transportUrl.replace(/\/manifest\.json$/, "");
+    const startedAt = Date.now();
+
+    onAddon({ addonId, addonName, status: "loading", streams: [], durationMs: 0 });
+
+    const task = fetchWithTimeout(
+      `${baseUrl}/stream/${type}/${id}.json`,
+      {},
+      perAddonTimeoutMs
+    )
+      .then((res) => (res.ok ? res.json() : { streams: [] }))
+      .then((data) => {
+        const streams = (data?.streams ?? []) as StremioStream[];
+        onAddon({
+          addonId,
+          addonName,
+          status: "done",
+          streams,
+          durationMs: Date.now() - startedAt,
+        });
+      })
+      .catch((err: unknown) => {
+        const aborted =
+          err && typeof err === "object" && "name" in err && (err as { name: string }).name === "AbortError";
+        onAddon({
+          addonId,
+          addonName,
+          status: aborted ? "timeout" : "error",
+          streams: [],
+          durationMs: Date.now() - startedAt,
+        });
+      });
+    tasks.push(task);
+  }
+  return Promise.all(tasks).then(() => undefined);
 }
 
 export async function fetchStreams(

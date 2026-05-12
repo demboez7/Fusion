@@ -27,6 +27,110 @@ interface SubtitleOption {
   url?: string;
 }
 
+const LANG_CODE_NAMES: Record<string, string> = {
+  en: "English", eng: "English",
+  he: "Hebrew", heb: "Hebrew", iw: "Hebrew",
+  ar: "Arabic", ara: "Arabic",
+  ru: "Russian", rus: "Russian",
+  es: "Spanish", spa: "Spanish",
+  fr: "French", fre: "French", fra: "French",
+  de: "German", ger: "German", deu: "German",
+  it: "Italian", ita: "Italian",
+  pt: "Portuguese", por: "Portuguese",
+  tr: "Turkish", tur: "Turkish",
+  pl: "Polish", pol: "Polish",
+  nl: "Dutch", dut: "Dutch", nld: "Dutch",
+  ro: "Romanian", rum: "Romanian", ron: "Romanian",
+  cs: "Czech", cze: "Czech", ces: "Czech",
+  el: "Greek", gre: "Greek", ell: "Greek",
+  zh: "Chinese", chi: "Chinese", zho: "Chinese",
+  ja: "Japanese", jpn: "Japanese",
+  ko: "Korean", kor: "Korean",
+  hi: "Hindi", hin: "Hindi",
+  uk: "Ukrainian", ukr: "Ukrainian",
+  bg: "Bulgarian", bul: "Bulgarian",
+  sr: "Serbian", srp: "Serbian",
+  hr: "Croatian", hrv: "Croatian",
+  sv: "Swedish", swe: "Swedish",
+  no: "Norwegian", nor: "Norwegian",
+  fi: "Finnish", fin: "Finnish",
+  da: "Danish", dan: "Danish",
+  hu: "Hungarian", hun: "Hungarian",
+  fa: "Persian", per: "Persian", fas: "Persian",
+  th: "Thai", tha: "Thai",
+  vi: "Vietnamese", vie: "Vietnamese",
+  id: "Indonesian", ind: "Indonesian",
+};
+
+function prettyLangName(raw: string | undefined): string {
+  if (!raw) return "Unknown";
+  const trimmed = raw.trim().toLowerCase();
+  if (LANG_CODE_NAMES[trimmed]) return LANG_CODE_NAMES[trimmed];
+  // First-letter uppercase the original (preserves "Machine", "Forced", etc).
+  const orig = raw.trim();
+  return orig.charAt(0).toUpperCase() + orig.slice(1);
+}
+
+function extractFilenameHint(url: string): string | null {
+  try {
+    const u = new URL(url);
+    let last = decodeURIComponent(u.pathname.split("/").filter(Boolean).pop() ?? "");
+    last = last.replace(/\.(srt|vtt|ass|ssa|sub)(\.gz)?$/i, "");
+    if (!last) return null;
+    // Try to detect a language code in the filename, e.g. "...heb.srt" or
+    // "...hebrew.srt" — promote it. Otherwise return a short, readable hint.
+    for (const code of Object.keys(LANG_CODE_NAMES)) {
+      const re = new RegExp(`(^|[._\\-\\[\\]\\s])${code}([._\\-\\[\\]\\s]|$)`, "i");
+      if (re.test(last)) return LANG_CODE_NAMES[code];
+    }
+    // Strip noisy patterns; keep at most ~30 chars of useful tokens.
+    const tokens = last
+      .split(/[._\-\[\]\s]+/)
+      .filter((t) => t.length > 1 && !/^\d+$/.test(t) && !/^(720p|1080p|2160p|4k|x264|x265|hevc|aac|ac3|web|webrip|bluray|brrip|dvdrip|hdtv|dj)$/i.test(t))
+      .slice(0, 4);
+    const hint = tokens.join(" ").trim();
+    return hint.length > 0 ? hint.slice(0, 30) : null;
+  } catch {
+    return null;
+  }
+}
+
+function buildAddonSubtitleOptions(subs: StremioSubtitle[]): SubtitleOption[] {
+  // Use the addon-provided name/title first, then fall back to lang + URL hint.
+  const labelCounts = new Map<string, number>();
+  const out: SubtitleOption[] = subs.map((s, i) => {
+    const langPretty = prettyLangName(s.lang);
+    const explicit = s.name?.trim() || s.title?.trim();
+    const hint = !explicit ? extractFilenameHint(s.url) : null;
+    let label = explicit || (hint && hint !== langPretty ? `${langPretty} · ${hint}` : langPretty);
+    return {
+      id: `addon::${i}::${s.id}`,
+      label,
+      language: langPretty,
+      external: true,
+      url: s.url,
+    };
+  });
+  // Dedupe identical labels by appending an index.
+  for (const opt of out) {
+    const n = (labelCounts.get(opt.label) ?? 0) + 1;
+    labelCounts.set(opt.label, n);
+  }
+  const seen = new Map<string, number>();
+  return out.map((opt) => {
+    const total = labelCounts.get(opt.label) ?? 1;
+    if (total === 1) return opt;
+    const idx = (seen.get(opt.label) ?? 0) + 1;
+    seen.set(opt.label, idx);
+    return { ...opt, label: `${opt.label} (#${idx})` };
+  });
+}
+
+// Sort by language so all Hebrew options group together, English together, etc.
+function sortSubtitles(options: SubtitleOption[]): SubtitleOption[] {
+  return [...options].sort((a, b) => a.language.localeCompare(b.language) || a.label.localeCompare(b.label));
+}
+
 export default function PlayerScreen() {
   const { url, title, type, subtitleId } = useLocalSearchParams<{
     url: string;
@@ -102,15 +206,7 @@ export default function PlayerScreen() {
     setLoadingAddonSubs(true);
     try {
       const subs: StremioSubtitle[] = await getSubtitles(type, subtitleId);
-      setAddonTracks(
-        subs.map((s) => ({
-          id: `addon::${s.id}`,
-          label: s.lang || s.id,
-          language: s.lang || "",
-          external: true,
-          url: s.url,
-        }))
-      );
+      setAddonTracks(sortSubtitles(buildAddonSubtitleOptions(subs)));
     } catch {
       // ignore — empty list
     } finally {
