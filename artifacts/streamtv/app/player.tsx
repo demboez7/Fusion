@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useStremio } from "@/contexts/StremioContext";
 import { useColors } from "@/hooks/useColors";
 import { StremioSubtitle } from "@/services/stremio";
+import { fetchSubtitleCues, findActiveCue, SubtitleCue } from "@/services/subtitles";
 
 interface SubtitleOption {
   id: string;
@@ -45,15 +46,21 @@ export default function PlayerScreen() {
   const [loadingAddonSubs, setLoadingAddonSubs] = useState(false);
   const [addonSubsLoaded, setAddonSubsLoaded] = useState(false);
   const [selectedSubtitle, setSelectedSubtitle] = useState<string | null>(null);
+  const [externalCues, setExternalCues] = useState<SubtitleCue[] | null>(null);
+  const [activeCueText, setActiveCueText] = useState<string | null>(null);
+  const [loadingExternalSub, setLoadingExternalSub] = useState(false);
+  const [externalSubError, setExternalSubError] = useState<string | null>(null);
+  const cuesRef = useRef<SubtitleCue[] | null>(null);
 
   const player = useVideoPlayer(url ?? "", (p) => {
     p.play();
+    p.timeUpdateEventInterval = 0.25;
   });
 
   useEffect(() => {
     const errSub = player.addListener("statusChange", (ev) => {
       if (ev.status === "error") {
-        setError("Stream failed to load. The codec or container may not be supported by Expo Go.");
+        setError("Stream failed to load. The codec or container may not be supported.");
       }
     });
     const trackSub = player.addListener("availableSubtitleTracksChange" as never, (ev: unknown) => {
@@ -65,11 +72,26 @@ export default function PlayerScreen() {
         );
       }
     });
+    const timeSub = player.addListener("timeUpdate", (ev) => {
+      const cues = cuesRef.current;
+      if (!cues || cues.length === 0) return;
+      const cue = findActiveCue(cues, ev.currentTime);
+      setActiveCueText((prev) => {
+        const next = cue ? cue.text : null;
+        return prev === next ? prev : next;
+      });
+    });
     return () => {
       errSub.remove();
       trackSub.remove();
+      timeSub.remove();
     };
   }, [player]);
+
+  useEffect(() => {
+    cuesRef.current = externalCues;
+    if (!externalCues) setActiveCueText(null);
+  }, [externalCues]);
 
   const loadAddonSubtitles = async () => {
     if (addonSubsLoaded || loadingAddonSubs) return;
@@ -102,27 +124,41 @@ export default function PlayerScreen() {
     loadAddonSubtitles();
   };
 
-  const selectSubtitle = (option: SubtitleOption | null) => {
+  const selectSubtitle = async (option: SubtitleOption | null) => {
+    setExternalSubError(null);
     if (option === null) {
       try {
-        (player as unknown as { selectedSubtitleTrack: null }).selectedSubtitleTrack = null;
+        (player as unknown as { subtitleTrack: null }).subtitleTrack = null;
       } catch {}
+      setExternalCues(null);
       setSelectedSubtitle(null);
       setShowSubtitles(false);
       return;
     }
     if (option.external && option.url) {
-      // expo-video can't attach external SRT/VTT tracks at runtime in Expo Go.
-      // Offer to open the .srt file in the user's preferred app instead.
-      Linking.openURL(option.url).catch(() => {});
+      setLoadingExternalSub(true);
       setSelectedSubtitle(option.id);
-      setShowSubtitles(false);
+      try {
+        const cues = await fetchSubtitleCues(option.url);
+        setExternalCues(cues);
+        try {
+          (player as unknown as { subtitleTrack: null }).subtitleTrack = null;
+        } catch {}
+        setShowSubtitles(false);
+      } catch (e) {
+        setExternalCues(null);
+        setSelectedSubtitle(null);
+        setExternalSubError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setLoadingExternalSub(false);
+      }
       return;
     }
     try {
-      (player as unknown as { selectedSubtitleTrack: string }).selectedSubtitleTrack = option.id;
-      setSelectedSubtitle(option.id);
+      (player as unknown as { subtitleTrack: { id: string } }).subtitleTrack = { id: option.id } as unknown as { id: string };
     } catch {}
+    setExternalCues(null);
+    setSelectedSubtitle(option.id);
     setShowSubtitles(false);
   };
 
@@ -156,6 +192,12 @@ export default function PlayerScreen() {
         fullscreenOptions={{ enable: true }}
         allowsPictureInPicture
       />
+
+      {activeCueText && (
+        <View style={styles.subtitleOverlay} pointerEvents="none">
+          <Text style={styles.subtitleOverlayText}>{activeCueText}</Text>
+        </View>
+      )}
 
       {/* Always-visible top overlay with back + CC. Sits along the very top edge so
           it never overlaps the native scrub bar (which is at the bottom). */}
@@ -258,23 +300,34 @@ export default function PlayerScreen() {
                 No subtitles found from your installed addons for this title.
               </Text>
             )}
-            {addonTracks.map((track) => (
-              <Pressable
-                key={track.id}
-                style={[styles.subtitleRow, selectedSubtitle === track.id && { backgroundColor: colors.surface }]}
-                onPress={() => selectSubtitle(track)}
-              >
-                <Feather name="external-link" size={18} color={colors.mutedForeground} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.subtitleLabel, { color: colors.foreground }]}>
+            {externalSubError && (
+              <Text style={[styles.noSubText, { color: colors.destructive }]}>
+                Couldn&apos;t load subtitle: {externalSubError}
+              </Text>
+            )}
+            {addonTracks.map((track) => {
+              const isSelected = selectedSubtitle === track.id;
+              return (
+                <Pressable
+                  key={track.id}
+                  style={[styles.subtitleRow, isSelected && { backgroundColor: colors.surface }]}
+                  onPress={() => selectSubtitle(track)}
+                  disabled={loadingExternalSub}
+                >
+                  <Feather
+                    name={isSelected ? "check-circle" : "circle"}
+                    size={18}
+                    color={isSelected ? colors.primary : colors.mutedForeground}
+                  />
+                  <Text style={[styles.subtitleLabel, { color: colors.foreground, flex: 1 }]}>
                     {track.label || track.language}
                   </Text>
-                  <Text style={[styles.subtitleHint, { color: colors.mutedForeground }]}>
-                    Opens externally — Expo Go can't load .srt files into the player
-                  </Text>
-                </View>
-              </Pressable>
-            ))}
+                  {isSelected && loadingExternalSub && (
+                    <ActivityIndicator color={colors.primary} size="small" />
+                  )}
+                </Pressable>
+              );
+            })}
 
             {allTracks.length === 0 && embeddedTracks.length === 0 && !loadingAddonSubs && addonSubsLoaded && (
               <Text style={[styles.noSubText, { color: colors.mutedForeground }]}>
@@ -333,4 +386,26 @@ const styles = StyleSheet.create({
   subtitleHint: { fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 2 },
   loadingRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 14, paddingHorizontal: 8 },
   noSubText: { fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 20, paddingVertical: 12, paddingHorizontal: 8 },
+  subtitleOverlay: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    bottom: 80,
+    alignItems: "center",
+    pointerEvents: "none",
+  },
+  subtitleOverlayText: {
+    color: "#fff",
+    fontSize: 18,
+    fontFamily: "Inter_600SemiBold",
+    textAlign: "center",
+    backgroundColor: "rgba(0,0,0,0.65)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 4,
+    overflow: "hidden",
+    textShadowColor: "rgba(0,0,0,0.9)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
 });

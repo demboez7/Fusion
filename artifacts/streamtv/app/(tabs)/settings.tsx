@@ -8,14 +8,12 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useIptv } from "@/contexts/IptvContext";
-import { useSettings } from "@/contexts/SettingsContext";
 import { useStremio } from "@/contexts/StremioContext";
 import { useColors } from "@/hooks/useColors";
 
@@ -28,8 +26,7 @@ export default function SettingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { isLoggedIn, user, login, logout, addons } = useStremio();
-  const { playlistUrl, setPlaylistUrl, channels, epgUrl, setEpgUrl, epgData, epgLoading, refreshEpg } = useIptv();
-  const { isTvMode, setTvMode } = useSettings();
+  const { playlistUrl, setPlaylistUrl, channels } = useIptv();
 
   const [showLogin, setShowLogin] = useState(false);
   const [email, setEmail] = useState("");
@@ -40,9 +37,6 @@ export default function SettingsScreen() {
   const [showIptv, setShowIptv] = useState(false);
   const [iptvInput, setIptvInput] = useState(playlistUrl);
   const [savingIptv, setSavingIptv] = useState(false);
-
-  const [showEpg, setShowEpg] = useState(false);
-  const [epgInput, setEpgInput] = useState(epgUrl);
 
   const [showAddons, setShowAddons] = useState(false);
 
@@ -99,11 +93,6 @@ export default function SettingsScreen() {
     } finally {
       setSavingIptv(false);
     }
-  };
-
-  const handleSaveEpg = async () => {
-    await setEpgUrl(epgInput.trim());
-    setShowEpg(false);
   };
 
   return (
@@ -220,65 +209,6 @@ export default function SettingsScreen() {
             </Pressable>
           </View>
         )}
-
-        <SectionHeader title="EPG (TV GUIDE)" />
-        <View style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={styles.rowLeft}>
-            <Feather name="calendar" size={18} color={colors.primary} />
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.rowLabel, { color: colors.foreground }]}>EPG / TV Guide</Text>
-              {epgUrl ? (
-                <Text style={[styles.rowSub, { color: colors.mutedForeground }]} numberOfLines={1}>
-                  {epgData.size > 0 ? `${epgData.size} channels with guide` : epgUrl}
-                </Text>
-              ) : (
-                <Text style={[styles.rowSub, { color: colors.mutedForeground }]}>
-                  Auto-detected from playlist or set manually
-                </Text>
-              )}
-            </View>
-          </View>
-          <Pressable onPress={() => setShowEpg(!showEpg)}>
-            <Feather name={showEpg ? "chevron-up" : "edit-2"} size={16} color={colors.mutedForeground} />
-          </Pressable>
-        </View>
-        {epgUrl && (
-          <Pressable style={({ pressed }) => [styles.row, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.75 : 1 }]} onPress={refreshEpg}>
-            <View style={styles.rowLeft}>
-              <Feather name="refresh-cw" size={18} color={colors.primary} />
-              <Text style={[styles.rowLabel, { color: colors.foreground }]}>Refresh EPG</Text>
-            </View>
-            {epgLoading ? <ActivityIndicator color={colors.primary} size="small" /> : null}
-          </Pressable>
-        )}
-        {showEpg && (
-          <View style={[styles.form, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.formLabel, { color: colors.mutedForeground }]}>XMLTV EPG URL (optional)</Text>
-            <TextInput style={[styles.input, { color: colors.foreground, borderColor: colors.border }]} placeholder="http://provider.com/epg.xml" placeholderTextColor={colors.mutedForeground} value={epgInput} onChangeText={setEpgInput} autoCapitalize="none" keyboardType="url" selectionColor={colors.primary} />
-            <Pressable style={({ pressed }) => [styles.formBtn, { backgroundColor: colors.primary, opacity: pressed ? 0.8 : 1 }]} onPress={handleSaveEpg}>
-              <Text style={[styles.formBtnText, { color: colors.primaryForeground }]}>Save & Load EPG</Text>
-            </Pressable>
-          </View>
-        )}
-
-        <SectionHeader title="DISPLAY" />
-        <View style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={styles.rowLeft}>
-            <Feather name="monitor" size={18} color={colors.primary} />
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.rowLabel, { color: colors.foreground }]}>TV Mode</Text>
-              <Text style={[styles.rowSub, { color: colors.mutedForeground }]}>
-                Top nav bar, larger cards, D-pad focus. Auto-on for Android TV.
-              </Text>
-            </View>
-          </View>
-          <Switch
-            value={isTvMode}
-            onValueChange={setTvMode}
-            trackColor={{ false: colors.muted, true: colors.primary }}
-            thumbColor="#fff"
-          />
-        </View>
 
         <SectionHeader title="ABOUT" />
         <View style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
