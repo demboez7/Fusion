@@ -338,7 +338,7 @@ export async function fetchStreams(
 
     const baseUrl = addon.transportUrl.replace(/\/manifest\.json$/, "");
     streamPromises.push(
-      fetchWithTimeout(`${baseUrl}/stream/${type}/${id}.json`, {}, 10000)
+      fetchWithTimeout(`${baseUrl}/stream/${type}/${id}.json`, {}, 30000)
         .then((res) => (res.ok ? res.json() : { streams: [] }))
         .then((data) => (data?.streams ?? []) as StremioStream[])
         .catch(() => [] as StremioStream[])

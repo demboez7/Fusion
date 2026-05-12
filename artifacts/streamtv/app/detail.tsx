@@ -24,7 +24,7 @@ import {
   tmdbPoster,
 } from "@/services/tmdb";
 
-const STREAM_TIMEOUT_MS = 15000;
+const STREAM_TIMEOUT_MS = 35000;
 
 interface SeasonEpisode {
   id: string;
@@ -225,6 +225,16 @@ export default function DetailScreen() {
 
   useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
 
+  // Auto-load streams for movies (and series with no episode list) as soon as
+  // the meta is loaded, so the user doesn't have to tap a "Find Streams" button.
+  useEffect(() => {
+    if (!meta || !type || !id) return;
+    if (type === "series" && seasonNumbers.length > 0) return;
+    if (streamsLoaded || loadingStreams) return;
+    loadStreams();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meta, type, id, seasonNumbers.length]);
+
   const handleEpisodePress = (ep: SeasonEpisode) => {
     if (activeEpisode?.id === ep.id) {
       setActiveEpisode(null);
@@ -370,25 +380,31 @@ export default function DetailScreen() {
           </View>
         )}
 
-        {!isSeries && (
+        {!isSeries && loadingStreams && !streamsLoaded && (
+          <View style={[styles.watchBtn, { backgroundColor: colors.surface }]}>
+            <ActivityIndicator color={colors.primary} />
+            <Text style={[styles.watchBtnText, { color: colors.foreground }]}>
+              Searching streams{elapsed > 0 ? ` (${elapsed}s)` : ""}…
+            </Text>
+          </View>
+        )}
+        {!isSeries && streamsLoaded && (
           <Pressable
-            style={({ pressed }) => [styles.watchBtn, { backgroundColor: colors.primary, opacity: pressed ? 0.85 : 1 }]}
+            style={({ pressed }) => [styles.watchBtn, { backgroundColor: colors.surface, opacity: pressed ? 0.75 : 1 }]}
             onPress={() => loadStreams()}
             disabled={loadingStreams}
           >
             {loadingStreams ? (
               <View style={styles.loadingRow}>
-                <ActivityIndicator color={colors.primaryForeground} />
-                <Text style={[styles.watchBtnText, { color: colors.primaryForeground }]}>
+                <ActivityIndicator color={colors.primary} />
+                <Text style={[styles.watchBtnText, { color: colors.foreground }]}>
                   Searching{elapsed > 0 ? ` (${elapsed}s)` : ""}…
                 </Text>
               </View>
             ) : (
               <>
-                <Feather name="search" size={18} color={colors.primaryForeground} />
-                <Text style={[styles.watchBtnText, { color: colors.primaryForeground }]}>
-                  {streamsLoaded ? "Search Again" : "Find Streams"}
-                </Text>
+                <Feather name="refresh-cw" size={16} color={colors.foreground} />
+                <Text style={[styles.watchBtnText, { color: colors.foreground }]}>Search Again</Text>
               </>
             )}
           </Pressable>
@@ -502,23 +518,33 @@ export default function DetailScreen() {
 
         {isSeries && !hasEpisodes && (
           <>
-            <Pressable
-              style={({ pressed }) => [styles.watchBtn, { backgroundColor: colors.primary, opacity: pressed ? 0.85 : 1 }]}
-              onPress={() => loadStreams()}
-              disabled={loadingStreams}
-            >
-              {loadingStreams ? (
-                <View style={styles.loadingRow}>
-                  <ActivityIndicator color={colors.primaryForeground} />
-                  <Text style={[styles.watchBtnText, { color: colors.primaryForeground }]}>Searching{elapsed > 0 ? ` (${elapsed}s)` : ""}…</Text>
-                </View>
-              ) : (
-                <>
-                  <Feather name="search" size={18} color={colors.primaryForeground} />
-                  <Text style={[styles.watchBtnText, { color: colors.primaryForeground }]}>{streamsLoaded ? "Search Again" : "Find Streams"}</Text>
-                </>
-              )}
-            </Pressable>
+            {loadingStreams && !streamsLoaded && (
+              <View style={[styles.watchBtn, { backgroundColor: colors.surface }]}>
+                <ActivityIndicator color={colors.primary} />
+                <Text style={[styles.watchBtnText, { color: colors.foreground }]}>
+                  Searching streams{elapsed > 0 ? ` (${elapsed}s)` : ""}…
+                </Text>
+              </View>
+            )}
+            {streamsLoaded && (
+              <Pressable
+                style={({ pressed }) => [styles.watchBtn, { backgroundColor: colors.surface, opacity: pressed ? 0.75 : 1 }]}
+                onPress={() => loadStreams()}
+                disabled={loadingStreams}
+              >
+                {loadingStreams ? (
+                  <View style={styles.loadingRow}>
+                    <ActivityIndicator color={colors.primary} />
+                    <Text style={[styles.watchBtnText, { color: colors.foreground }]}>Searching{elapsed > 0 ? ` (${elapsed}s)` : ""}…</Text>
+                  </View>
+                ) : (
+                  <>
+                    <Feather name="refresh-cw" size={16} color={colors.foreground} />
+                    <Text style={[styles.watchBtnText, { color: colors.foreground }]}>Search Again</Text>
+                  </>
+                )}
+              </Pressable>
+            )}
             {streamsLoaded && (
               <StreamsList streams={streams} loadingStreams={loadingStreams} streamError={streamError} elapsed={elapsed} onPress={handleStream} colors={colors} />
             )}

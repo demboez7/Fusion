@@ -39,6 +39,39 @@ export function parseVtt(content: string): SubtitleCue[] {
   return parseSrt(text);
 }
 
+// Patterns that match promo / attribution text often injected by Stremio
+// subtitle addons as the first one or two cues of the file.
+const PROMO_PATTERNS: RegExp[] = [
+  /\.srt\b/i,
+  /\.vtt\b/i,
+  /machine\s*translation|תרגום\s*מכונה/i,
+  /opensubtitles|subscene|wyzie|addic7ed|yifysubtitles|podnapisi/i,
+  /https?:\/\//i,
+  /www\./i,
+  /stremio/i,
+  /גרסת\s*סטרמיו|אינה\s*תומכת/i,
+  /סיכוי\s*התאמה|match\s*probability/i,
+  /imdb_tt|tmdb_/i,
+  /\{[a-z_0-9]+\}/i,
+];
+
+function isPromoCue(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return true;
+  return PROMO_PATTERNS.some((re) => re.test(trimmed));
+}
+
+function stripLeadingPromoCues(cues: SubtitleCue[]): SubtitleCue[] {
+  // Drop promo cues that fall in the first 30 seconds of the file (where
+  // attribution banners usually live). Stop at the first "real" cue so we
+  // don't accidentally remove dialog that happens to mention a URL later.
+  let start = 0;
+  while (start < cues.length && cues[start].start < 30 && isPromoCue(cues[start].text)) {
+    start++;
+  }
+  return start === 0 ? cues : cues.slice(start);
+}
+
 export async function fetchSubtitleCues(url: string): Promise<SubtitleCue[]> {
   const res = await fetch(url, {
     headers: {
@@ -51,7 +84,8 @@ export async function fetchSubtitleCues(url: string): Promise<SubtitleCue[]> {
   const text = await res.text();
   if (!text.trim()) throw new Error("Subtitle file is empty");
   const isVtt = /^WEBVTT/i.test(text.trim()) || /\.vtt(\?|$)/i.test(url);
-  const cues = isVtt ? parseVtt(text) : parseSrt(text);
+  const parsed = isVtt ? parseVtt(text) : parseSrt(text);
+  const cues = stripLeadingPromoCues(parsed);
   if (cues.length === 0) throw new Error("Could not parse any cues from this subtitle file");
   return cues;
 }
