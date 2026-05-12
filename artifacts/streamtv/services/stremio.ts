@@ -1,6 +1,23 @@
 const STREMIO_API = "https://api.strem.io/api";
 const CINEMETA_URL = "https://v3-cinemeta.strem.io";
 
+// Many Stremio addons (especially Real-Debrid variants like Torrentio,
+// Comet, Jackettio, Peerflix, Sootio, etc.) filter requests by User-Agent
+// and return an empty stream array unless the request looks like it came
+// from the official Stremio client. okhttp's default UA gets ignored. We
+// mimic the desktop client UA so the addons treat us as a real Stremio
+// install.
+const STREMIO_UA = "Stremio/4.4.168 (Linux x86_64) Chrome/106.0.5249.199";
+
+function addonHeaders(extra?: Record<string, string>): Record<string, string> {
+  return {
+    "User-Agent": STREMIO_UA,
+    Accept: "application/json",
+    "Accept-Language": "en-US,en;q=0.9,he;q=0.8",
+    ...(extra ?? {}),
+  };
+}
+
 async function fetchWithTimeout(
   url: string,
   options?: RequestInit,
@@ -14,6 +31,10 @@ async function fetchWithTimeout(
   } finally {
     clearTimeout(id);
   }
+}
+
+async function fetchAddon(url: string, timeoutMs = 10000): Promise<Response> {
+  return fetchWithTimeout(url, { headers: addonHeaders() }, timeoutMs);
 }
 
 export interface StremioUser {
@@ -93,6 +114,9 @@ export interface StremioSubtitle {
   title?: string;
   m?: string;
   SubFormat?: string;
+  // Stamped by fetchSubtitlesFromAddons so the player can show which
+  // addon each entry came from.
+  addonName?: string;
 }
 
 export interface AddonStreamProgress {
@@ -300,7 +324,7 @@ export async function fetchMetaFromAddons(
   for (const addon of metaAddons) {
     try {
       const baseUrl = addon.transportUrl.replace(/\/manifest\.json$/, "");
-      const res = await fetchWithTimeout(`${baseUrl}/meta/${type}/${id}.json`, {}, 8000);
+      const res = await fetchAddon(`${baseUrl}/meta/${type}/${id}.json`, 8000);
       if (!res.ok) continue;
       const data = await res.json();
       if (data.meta) return data.meta as StremioMeta;
@@ -322,9 +346,16 @@ export async function fetchSubtitlesFromAddons(
   const results = await Promise.allSettled(
     subAddons.map((addon) => {
       const baseUrl = addon.transportUrl.replace(/\/manifest\.json$/, "");
-      return fetchWithTimeout(`${baseUrl}/subtitles/${type}/${id}.json`, {}, 10000)
+      const addonName = addon.manifest?.name ?? "Addon";
+      return fetchAddon(`${baseUrl}/subtitles/${type}/${id}.json`, 10000)
         .then((res) => (res.ok ? res.json() : { subtitles: [] }))
-        .then((data) => (data?.subtitles ?? []) as StremioSubtitle[])
+        .then(
+          (data) =>
+            ((data?.subtitles ?? []) as StremioSubtitle[]).map((s) => ({
+              ...s,
+              addonName,
+            }))
+        )
         .catch(() => [] as StremioSubtitle[]);
     })
   );
@@ -356,11 +387,7 @@ export function fetchStreamsProgressive(
 
     onAddon({ addonId, addonName, status: "loading", streams: [], durationMs: 0 });
 
-    const task = fetchWithTimeout(
-      `${baseUrl}/stream/${type}/${id}.json`,
-      {},
-      perAddonTimeoutMs
-    )
+    const task = fetchAddon(`${baseUrl}/stream/${type}/${id}.json`, perAddonTimeoutMs)
       .then((res) => (res.ok ? res.json() : { streams: [] }))
       .then((data) => {
         const streams = (data?.streams ?? []) as StremioStream[];

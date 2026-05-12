@@ -71,38 +71,73 @@ function prettyLangName(raw: string | undefined): string {
   return orig.charAt(0).toUpperCase() + orig.slice(1);
 }
 
+function looksGenericLang(raw: string): boolean {
+  const t = raw.trim().toLowerCase();
+  return t === "" || t === "machine" || t === "auto" || t === "unknown" || t === "und" || t === "xx";
+}
+
 function extractFilenameHint(url: string): string | null {
   try {
-    const u = new URL(url);
-    let last = decodeURIComponent(u.pathname.split("/").filter(Boolean).pop() ?? "");
-    last = last.replace(/\.(srt|vtt|ass|ssa|sub)(\.gz)?$/i, "");
+    // RN's URL parser can be flaky on some addon URLs — manual extraction is
+    // safer. Strip query/hash, take last path segment, drop common subtitle
+    // extensions.
+    const noQuery = url.split("#")[0].split("?")[0];
+    let last = decodeURIComponent(noQuery.split("/").filter(Boolean).pop() ?? "");
+    last = last.replace(/\.(srt|vtt|ass|ssa|sub|smi)(\.gz|\.zip)?$/i, "");
     if (!last) return null;
-    // Try to detect a language code in the filename, e.g. "...heb.srt" or
-    // "...hebrew.srt" — promote it. Otherwise return a short, readable hint.
+
+    // Detect a language code embedded in the filename ("...heb.srt", "[en]…").
     for (const code of Object.keys(LANG_CODE_NAMES)) {
-      const re = new RegExp(`(^|[._\\-\\[\\]\\s])${code}([._\\-\\[\\]\\s]|$)`, "i");
+      const re = new RegExp(`(^|[._\\-\\[\\]\\s\\(\\)])${code}([._\\-\\[\\]\\s\\(\\)]|$)`, "i");
       if (re.test(last)) return LANG_CODE_NAMES[code];
     }
-    // Strip noisy patterns; keep at most ~30 chars of useful tokens.
+
+    // Otherwise return a short, readable token sequence from the filename.
     const tokens = last
-      .split(/[._\-\[\]\s]+/)
-      .filter((t) => t.length > 1 && !/^\d+$/.test(t) && !/^(720p|1080p|2160p|4k|x264|x265|hevc|aac|ac3|web|webrip|bluray|brrip|dvdrip|hdtv|dj)$/i.test(t))
+      .split(/[._\-\[\]\s\(\)]+/)
+      .filter(
+        (t) =>
+          t.length > 1 &&
+          !/^\d+$/.test(t) &&
+          !/^(720p|1080p|2160p|4k|x264|x265|hevc|aac|ac3|web|webrip|bluray|brrip|dvdrip|hdtv|dj|sub|subs|subtitle|subtitles)$/i.test(
+            t
+          )
+      )
       .slice(0, 4);
     const hint = tokens.join(" ").trim();
-    return hint.length > 0 ? hint.slice(0, 30) : null;
+    if (hint.length > 0) return hint.slice(0, 30);
+    // Final fallback: just the raw filename truncated.
+    return last.slice(0, 30);
   } catch {
     return null;
   }
 }
 
 function buildAddonSubtitleOptions(subs: StremioSubtitle[]): SubtitleOption[] {
-  // Use the addon-provided name/title first, then fall back to lang + URL hint.
-  const labelCounts = new Map<string, number>();
+  // Strategy: prefer an explicit name/title from the addon; otherwise build
+  // a label from (resolved language) + (URL filename hint) + (addon name).
+  // Always include the addon name when the addon's lang field is generic
+  // (e.g. "Machine") so 12 entries from one addon don't collapse to "Machine".
   const out: SubtitleOption[] = subs.map((s, i) => {
-    const langPretty = prettyLangName(s.lang);
     const explicit = s.name?.trim() || s.title?.trim();
-    const hint = !explicit ? extractFilenameHint(s.url) : null;
-    let label = explicit || (hint && hint !== langPretty ? `${langPretty} · ${hint}` : langPretty);
+    const langRaw = s.lang ?? "";
+    const generic = looksGenericLang(langRaw);
+    const hint = extractFilenameHint(s.url);
+    // If lang looks generic, try the URL-derived language first.
+    const langPretty = generic && hint && LANG_CODE_NAMES_VALUES.has(hint) ? hint : prettyLangName(langRaw);
+    const addonTag = s.addonName ? ` · ${s.addonName}` : "";
+
+    let label: string;
+    if (explicit) {
+      label = `${explicit}${addonTag}`;
+    } else if (hint && hint !== langPretty) {
+      label = `${langPretty} · ${hint}${addonTag}`;
+    } else {
+      // No useful filename info — at least show addon name + index so the
+      // user can tell entries apart.
+      label = `${langPretty}${addonTag}`;
+    }
+
     return {
       id: `addon::${i}::${s.id}`,
       label,
@@ -111,10 +146,11 @@ function buildAddonSubtitleOptions(subs: StremioSubtitle[]): SubtitleOption[] {
       url: s.url,
     };
   });
+
   // Dedupe identical labels by appending an index.
+  const labelCounts = new Map<string, number>();
   for (const opt of out) {
-    const n = (labelCounts.get(opt.label) ?? 0) + 1;
-    labelCounts.set(opt.label, n);
+    labelCounts.set(opt.label, (labelCounts.get(opt.label) ?? 0) + 1);
   }
   const seen = new Map<string, number>();
   return out.map((opt) => {
@@ -125,6 +161,8 @@ function buildAddonSubtitleOptions(subs: StremioSubtitle[]): SubtitleOption[] {
     return { ...opt, label: `${opt.label} (#${idx})` };
   });
 }
+
+const LANG_CODE_NAMES_VALUES = new Set(Object.values(LANG_CODE_NAMES));
 
 // Sort by language so all Hebrew options group together, English together, etc.
 function sortSubtitles(options: SubtitleOption[]): SubtitleOption[] {
