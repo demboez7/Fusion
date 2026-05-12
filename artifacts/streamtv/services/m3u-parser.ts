@@ -60,10 +60,26 @@ export function parseM3U(content: string): IptvChannel[] {
   return channels;
 }
 
+const BROWSER_UA =
+  "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36";
+
+async function fetchWithFallback(url: string): Promise<Response> {
+  try {
+    return await fetch(url, {
+      headers: {
+        "User-Agent": BROWSER_UA,
+        Accept: "*/*",
+      },
+    });
+  } catch {
+    return await fetch(url);
+  }
+}
+
 export async function fetchM3U(url: string): Promise<IptvChannel[]> {
   let res: Response;
   try {
-    res = await fetch(url);
+    res = await fetchWithFallback(url);
   } catch (netErr) {
     const msg = (netErr as Error).message || String(netErr);
     throw new Error(
