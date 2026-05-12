@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useIptv } from "@/contexts/IptvContext";
+import { useSettings } from "@/contexts/SettingsContext";
 import { useStremio } from "@/contexts/StremioContext";
 import { useColors } from "@/hooks/useColors";
 
@@ -27,6 +28,11 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { isLoggedIn, user, login, logout, addons } = useStremio();
   const { playlistUrl, setPlaylistUrl, channels } = useIptv();
+  const { hiddenStreamAddons, setHiddenStreamAddons } = useSettings();
+
+  const [showHidden, setShowHidden] = useState(false);
+  const [hiddenInput, setHiddenInput] = useState(hiddenStreamAddons.join(", "));
+  const [savingHidden, setSavingHidden] = useState(false);
 
   const [showLogin, setShowLogin] = useState(false);
   const [email, setEmail] = useState("");
@@ -75,6 +81,20 @@ export default function SettingsScreen() {
       { text: "Cancel", style: "cancel" },
       { text: "Sign Out", style: "destructive", onPress: logout },
     ]);
+  };
+
+  const handleSaveHidden = async () => {
+    setSavingHidden(true);
+    try {
+      const list = hiddenInput
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      await setHiddenStreamAddons(list);
+      setShowHidden(false);
+    } finally {
+      setSavingHidden(false);
+    }
   };
 
   const handleSaveIptv = async () => {
@@ -189,6 +209,57 @@ export default function SettingsScreen() {
               </View>
             )}
           </>
+        )}
+
+        <SectionHeader title="STREAM SOURCES" />
+        <Pressable
+          style={({ pressed }) => [styles.row, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.75 : 1 }]}
+          onPress={() => {
+            setHiddenInput(hiddenStreamAddons.join(", "));
+            setShowHidden(!showHidden);
+          }}
+        >
+          <View style={styles.rowLeft}>
+            <Feather name="eye-off" size={18} color={colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.rowLabel, { color: colors.foreground }]}>Hidden Stream Addons</Text>
+              <Text style={[styles.rowSub, { color: colors.mutedForeground }]} numberOfLines={1}>
+                Skip these when searching for streams
+              </Text>
+            </View>
+          </View>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Text style={[styles.rowValue, { color: colors.mutedForeground }]}>{hiddenStreamAddons.length}</Text>
+            <Feather name={showHidden ? "chevron-up" : "chevron-down"} size={16} color={colors.mutedForeground} />
+          </View>
+        </Pressable>
+        {showHidden && (
+          <View style={[styles.form, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.formLabel, { color: colors.mutedForeground }]}>
+              Comma-separated list. Each entry is matched against the addon name (case-insensitive substring). Use this to skip status checkers, region-only addons, or anything you don&apos;t want queried.
+            </Text>
+            <TextInput
+              style={[styles.input, { color: colors.foreground, borderColor: colors.border, minHeight: 80 }]}
+              placeholder="Local Files, Stremio Status, …"
+              placeholderTextColor={colors.mutedForeground}
+              value={hiddenInput}
+              onChangeText={setHiddenInput}
+              multiline
+              autoCapitalize="none"
+              selectionColor={colors.primary}
+            />
+            <Pressable
+              style={({ pressed }) => [styles.formBtn, { backgroundColor: colors.primary, opacity: pressed ? 0.8 : 1 }]}
+              onPress={handleSaveHidden}
+              disabled={savingHidden}
+            >
+              {savingHidden ? (
+                <ActivityIndicator color={colors.primaryForeground} />
+              ) : (
+                <Text style={[styles.formBtnText, { color: colors.primaryForeground }]}>Save</Text>
+              )}
+            </Pressable>
+          </View>
         )}
 
         <SectionHeader title="IPTV PLAYLIST" />

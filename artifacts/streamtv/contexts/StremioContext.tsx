@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { useSettings } from "@/contexts/SettingsContext";
 import {
   AddonStreamProgress,
   CatalogRow,
@@ -149,10 +150,24 @@ export function StremioProvider({ children }: { children: React.ReactNode }) {
   const getStreams = useCallback((type: string, id: string) =>
     fetchStreams(type, id, addons), [addons]);
 
+  const { hiddenStreamAddons } = useSettings();
   const getStreamsProgressive = useCallback(
-    (type: string, id: string, onAddon: (p: AddonStreamProgress) => void, imdbId?: string) =>
-      fetchStreamsProgressive(type, id, addons, onAddon, 30000, imdbId),
-    [addons]
+    (type: string, id: string, onAddon: (p: AddonStreamProgress) => void, imdbId?: string) => {
+      // Match user-entered hide tokens against the addon's display name
+      // only (not its id). Users enter human-readable names, and addon ids
+      // are short slugs more prone to accidental substring collisions.
+      const filtered = addons.filter((a) => {
+        const name = (a.manifest?.name ?? "").toLowerCase();
+        for (const needle of hiddenStreamAddons) {
+          const n = needle.toLowerCase().trim();
+          if (!n) continue;
+          if (name.includes(n)) return false;
+        }
+        return true;
+      });
+      return fetchStreamsProgressive(type, id, filtered, onAddon, 30000, imdbId);
+    },
+    [addons, hiddenStreamAddons]
   );
 
   const getSubtitles = useCallback((type: string, id: string) =>
