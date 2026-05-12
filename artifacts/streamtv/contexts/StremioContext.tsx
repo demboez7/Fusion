@@ -39,7 +39,8 @@ interface StremioContextValue {
   getStreamsProgressive: (
     type: string,
     id: string,
-    onAddon: (p: AddonStreamProgress) => void
+    onAddon: (p: AddonStreamProgress) => void,
+    imdbId?: string
   ) => Promise<void>;
   getSubtitles: (type: string, id: string) => Promise<StremioSubtitle[]>;
   streamAddonsCount: number;
@@ -149,8 +150,8 @@ export function StremioProvider({ children }: { children: React.ReactNode }) {
     fetchStreams(type, id, addons), [addons]);
 
   const getStreamsProgressive = useCallback(
-    (type: string, id: string, onAddon: (p: AddonStreamProgress) => void) =>
-      fetchStreamsProgressive(type, id, addons, onAddon),
+    (type: string, id: string, onAddon: (p: AddonStreamProgress) => void, imdbId?: string) =>
+      fetchStreamsProgressive(type, id, addons, onAddon, 30000, imdbId),
     [addons]
   );
 

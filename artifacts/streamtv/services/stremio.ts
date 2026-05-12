@@ -81,6 +81,11 @@ export interface StremioMeta {
   genres?: string[];
   year?: number;
   videos?: StremioVideo[];
+  // Cinemeta and most catalog addons include the IMDB id alongside their
+  // own catalog id. Used so debrid addons (Torrentio, Comet, Jackettio,
+  // etc.) — which only key on tt… ids — can still find streams when the
+  // primary id is from a different catalog (mf:…, kitsu:…, etc.).
+  imdb_id?: string;
 }
 
 export interface StremioVideo {
@@ -372,13 +377,33 @@ export async function fetchSubtitlesFromAddons(
   return all;
 }
 
+// Build the candidate id list to try for each addon. When the primary id
+// is something like "mf:abc" or "kitsu:123" but we also know the IMDB id
+// (from meta.imdb_id), we try both — most debrid addons only respond to
+// tt… ids, so this is what unlocks Torrentio/Comet/Jackettio/etc. for
+// non-IMDB-catalog titles. For series the imdb id needs the season and
+// episode appended.
+function buildIdCandidates(primaryId: string, imdbId?: string): string[] {
+  const out: string[] = [primaryId];
+  if (!imdbId) return out;
+  // Already an IMDB id? nothing to add.
+  const head = primaryId.split(":")[0];
+  if (head === imdbId || head.startsWith("tt")) return out;
+  const tail = primaryId.includes(":") ? primaryId.split(":").slice(1).join(":") : "";
+  const imdbVariant = tail ? `${imdbId}:${tail}` : imdbId;
+  if (!out.includes(imdbVariant)) out.push(imdbVariant);
+  return out;
+}
+
 export function fetchStreamsProgressive(
   type: string,
   id: string,
   addons: StremioAddon[],
   onAddon: (progress: AddonStreamProgress) => void,
-  perAddonTimeoutMs = 30000
+  perAddonTimeoutMs = 30000,
+  imdbId?: string
 ): Promise<void> {
+  const candidates = buildIdCandidates(id, imdbId);
   const tasks: Promise<void>[] = [];
   for (const addon of addons) {
     if (!addonSupportsResource(addon, "stream")) continue;
@@ -392,92 +417,102 @@ export function fetchStreamsProgressive(
 
     onAddon({ addonId, addonName, status: "loading", streams: [], durationMs: 0 });
 
-    const reqUrl = `${baseUrl}/stream/${type}/${id}.json`;
-    const task = fetchAddon(reqUrl, perAddonTimeoutMs)
-      .then(async (res) => {
-        const httpStatus = res.status;
-        if (!res.ok) {
-          // Read a short body snippet for debugging (Cloudflare challenge
-          // pages, "forbidden" text, etc.) — visible via adb logcat.
-          let snippet = "";
-          try {
-            snippet = (await res.text()).slice(0, 200);
-          } catch {
-            // ignore
+    // Pick which candidate ids to try for this addon. If the manifest
+    // declares idPrefixes, only call ids matching one of them. Otherwise
+    // try every candidate.
+    const idPrefixes: string[] = (addon.manifest as { idPrefixes?: string[] } | undefined)?.idPrefixes ?? [];
+    const filtered = candidates.filter((cid) => {
+      if (idPrefixes.length === 0) return true;
+      return idPrefixes.some((p) => cid.startsWith(p));
+    });
+    const idsToTry = filtered.length > 0 ? filtered : candidates;
+
+    interface PerIdResult {
+      streams: StremioStream[];
+      httpStatus?: number;
+      ok: boolean;
+      timedOut: boolean;
+      errorMessage?: string;
+    }
+
+    const runOne = (tryId: string): Promise<PerIdResult> => {
+      const reqUrl = `${baseUrl}/stream/${type}/${tryId}.json`;
+      return fetchAddon(reqUrl, perAddonTimeoutMs)
+        .then(async (res): Promise<PerIdResult> => {
+          const httpStatus = res.status;
+          if (!res.ok) {
+            let snippet = "";
+            try {
+              snippet = (await res.text()).slice(0, 200);
+            } catch {
+              // ignore
+            }
+            // eslint-disable-next-line no-console
+            console.warn(
+              `[stremio] ${addonName} ${reqUrl} -> HTTP ${httpStatus}${snippet ? ` body: ${snippet}` : ""}`
+            );
+            return { streams: [], httpStatus, ok: false, timedOut: false, errorMessage: `HTTP ${httpStatus}` };
           }
-          // eslint-disable-next-line no-console
-          console.warn(
-            `[stremio] ${addonName} ${reqUrl} -> HTTP ${httpStatus}${snippet ? ` body: ${snippet}` : ""}`
-          );
-          onAddon({
-            addonId,
-            addonName,
-            status: "error",
-            streams: [],
-            durationMs: Date.now() - startedAt,
-            httpStatus,
-            errorMessage: `HTTP ${httpStatus}`,
-          });
-          return;
-        }
-        let data: { streams?: StremioStream[] } = {};
-        let parseError: string | null = null;
-        try {
-          data = await res.json();
-        } catch (e) {
-          parseError = e instanceof Error ? e.message : "invalid JSON";
-        }
-        if (parseError) {
-          // eslint-disable-next-line no-console
-          console.warn(`[stremio] ${addonName} ${reqUrl} -> parse error: ${parseError}`);
-          onAddon({
-            addonId,
-            addonName,
-            status: "error",
-            streams: [],
-            durationMs: Date.now() - startedAt,
-            httpStatus,
-            errorMessage: "bad response",
-          });
-          return;
-        }
-        const streams = (data?.streams ?? []) as StremioStream[];
-        if (streams.length === 0) {
-          // Log empty responses too — helps diagnose whether the addon
-          // really has nothing for this id or is filtering us out.
-          // eslint-disable-next-line no-console
-          console.log(`[stremio] ${addonName} ${reqUrl} -> 200 OK with 0 streams`);
-        } else {
+          let data: { streams?: StremioStream[] } = {};
+          try {
+            data = await res.json();
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : "invalid JSON";
+            // eslint-disable-next-line no-console
+            console.warn(`[stremio] ${addonName} ${reqUrl} -> parse error: ${msg}`);
+            return { streams: [], httpStatus, ok: false, timedOut: false, errorMessage: "bad response" };
+          }
+          const streams = (data?.streams ?? []) as StremioStream[];
           // eslint-disable-next-line no-console
           console.log(`[stremio] ${addonName} ${reqUrl} -> 200 OK with ${streams.length} streams`);
+          return { streams, httpStatus, ok: true, timedOut: false };
+        })
+        .catch((err: unknown): PerIdResult => {
+          const aborted =
+            err && typeof err === "object" && "name" in err && (err as { name: string }).name === "AbortError";
+          const message =
+            err && typeof err === "object" && "message" in err
+              ? String((err as { message: unknown }).message)
+              : "network error";
+          // eslint-disable-next-line no-console
+          console.warn(`[stremio] ${addonName} ${reqUrl} -> ${aborted ? "timeout" : message}`);
+          return { streams: [], ok: false, timedOut: !!aborted, errorMessage: aborted ? "timeout" : message };
+        });
+    };
+
+    const task = Promise.all(idsToTry.map(runOne)).then((results) => {
+      // Merge streams across candidate ids, deduped by url or infoHash.
+      const seen = new Set<string>();
+      const merged: StremioStream[] = [];
+      for (const r of results) {
+        for (const s of r.streams) {
+          const key = s.url ?? (s.infoHash ? `ih:${s.infoHash}` : `${s.name}|${s.title}`);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          merged.push(s);
         }
-        onAddon({
-          addonId,
-          addonName,
-          status: "done",
-          streams,
-          durationMs: Date.now() - startedAt,
-          httpStatus,
-        });
-      })
-      .catch((err: unknown) => {
-        const aborted =
-          err && typeof err === "object" && "name" in err && (err as { name: string }).name === "AbortError";
-        const message =
-          err && typeof err === "object" && "message" in err
-            ? String((err as { message: unknown }).message)
-            : "network error";
-        // eslint-disable-next-line no-console
-        console.warn(`[stremio] ${addonName} ${reqUrl} -> ${aborted ? "timeout" : message}`);
-        onAddon({
-          addonId,
-          addonName,
-          status: aborted ? "timeout" : "error",
-          streams: [],
-          durationMs: Date.now() - startedAt,
-          errorMessage: aborted ? "timeout" : message,
-        });
+      }
+      const anyOk = results.some((r) => r.ok);
+      const anyTimeout = results.some((r) => r.timedOut);
+      const errResult = results.find((r) => !r.ok && !r.timedOut);
+      const status: AddonStreamProgress["status"] = anyOk
+        ? "done"
+        : anyTimeout
+          ? "timeout"
+          : "error";
+      const httpStatus = results.find((r) => r.httpStatus !== undefined)?.httpStatus;
+      const errorMessage =
+        status === "done" ? undefined : errResult?.errorMessage ?? (anyTimeout ? "timeout" : "failed");
+      onAddon({
+        addonId,
+        addonName,
+        status,
+        streams: merged,
+        durationMs: Date.now() - startedAt,
+        httpStatus,
+        errorMessage,
       });
+    });
     tasks.push(task);
   }
   return Promise.all(tasks).then(() => undefined);

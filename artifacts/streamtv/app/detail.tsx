@@ -203,6 +203,26 @@ export default function DetailScreen() {
   const loadStreams = async (streamId?: string) => {
     const sid = streamId ?? id;
     if (!type || !sid || loadingStreams) return;
+    // Derive an IMDB id to also try against debrid addons that only key
+    // on tt… ids (Torrentio/Comet/Jackettio/etc.). Prefer meta.imdb_id;
+    // fall back to the route id itself if it's already tt-prefixed.
+    const routeIdHead = (id ?? "").split(":")[0];
+    const baseImdb =
+      meta?.imdb_id ??
+      (routeIdHead.startsWith("tt") ? routeIdHead : undefined);
+    let imdbForCall: string | undefined;
+    if (baseImdb) {
+      // For series episodes, the streamId may be "<catalogId>:S:E" — append
+      // the season/episode tail to the IMDB id too.
+      const sidParts = sid.split(":");
+      const sidHead = sidParts[0];
+      const sidTail = sidParts.slice(1).join(":");
+      if (sidHead.startsWith("tt")) {
+        imdbForCall = sid;
+      } else {
+        imdbForCall = sidTail ? `${baseImdb}:${sidTail}` : baseImdb;
+      }
+    }
     setLoadingStreams(true);
     setStreamError(null);
     setStreams([]);
@@ -247,7 +267,7 @@ export default function DetailScreen() {
         if (p.status === "done" && p.streams.length > 0) {
           setStreams((prev) => [...prev, ...p.streams]);
         }
-      });
+      }, imdbForCall);
       setStreams((current) => {
         if (current.length === 0) {
           setStreamError("No streams found from your installed addons for this title.");
