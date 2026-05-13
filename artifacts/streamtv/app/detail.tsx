@@ -5,7 +5,6 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -633,6 +632,7 @@ function AddonStatusList({
   statuses: AddonStatus[];
   colors: ReturnType<typeof import("@/hooks/useColors").useColors>;
 }) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   if (statuses.length === 0) return null;
   // Stable order: loading first, then by name.
   const sorted = [...statuses].sort((a, b) => {
@@ -643,6 +643,7 @@ function AddonStatusList({
   return (
     <View style={styles.addonStatusList}>
       {sorted.map((s) => {
+        const isExpanded = expandedId === s.addonId;
         const isLoading = s.status === "loading";
         const isDone = s.status === "done";
         const isErr = s.status === "error" || s.status === "timeout";
@@ -662,58 +663,98 @@ function AddonStatusList({
               : s.count === 0
                 ? `no streams · ${(s.durationMs / 1000).toFixed(1)}s`
                 : `${s.count} stream${s.count === 1 ? "" : "s"} · ${(s.durationMs / 1000).toFixed(1)}s`;
-        const onPressDetail = () => {
-          const lines: string[] = [
-            `Addon: ${s.addonName}`,
-            `ID: ${s.addonId}`,
-            "",
-            `Status: ${s.status}${s.count > 0 ? ` · ${s.count} streams` : ""}`,
-            `Time: ${(s.durationMs / 1000).toFixed(1)}s`,
-          ];
-          if (s.httpStatus !== undefined) lines.push(`HTTP: ${s.httpStatus}`);
-          if (s.errorMessage) lines.push(`Error: ${s.errorMessage}`);
-          if (s.transportUrl) {
-            lines.push("", "Transport URL:", s.transportUrl);
-          }
-          if (s.requestUrls && s.requestUrls.length > 0) {
-            lines.push("", `Requested ${s.requestUrls.length} URL(s):`);
-            for (const u of s.requestUrls) lines.push(u);
-          }
-          if (s.responseSnippet) {
-            lines.push("", "Response (first 200 chars):", s.responseSnippet);
-          }
-          if (s.status === "done" && s.count === 0 && s.transportUrl) {
-            const hasConfig = /=\*\*\*|\/[A-Za-z0-9_-]{20,}\//.test(s.transportUrl);
-            if (!hasConfig) {
-              lines.push(
-                "",
-                "⚠ No config segment detected in transport URL — this addon may be installed without a Real-Debrid token. Re-install/configure it on web.stremio.com."
-              );
-            }
-          }
-          Alert.alert(s.addonName, lines.join("\n"));
-        };
+        const hasConfig =
+          !!s.transportUrl && /=\*\*\*|\/[A-Za-z0-9_-]{20,}\//.test(s.transportUrl);
+        const showConfigWarning = s.status === "done" && s.count === 0 && !!s.transportUrl && !hasConfig;
         return (
-          <Pressable
-            key={s.addonId}
-            style={({ pressed }) => [
-              styles.addonStatusRow,
-              { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.7 : 1 },
-            ]}
-            onPress={onPressDetail}
-          >
-            {isLoading ? (
-              <ActivityIndicator size="small" color={colors.primary} />
-            ) : (
-              <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
-            )}
-            <Text style={[styles.addonStatusName, { color: colors.foreground }]} numberOfLines={1}>
-              {s.addonName}
-            </Text>
-            <Text style={[styles.addonStatusDetail, { color: isDone && s.count > 0 ? colors.primary : colors.mutedForeground }]} numberOfLines={1}>
-              {detail}
-            </Text>
-          </Pressable>
+          <View key={s.addonId}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.addonStatusRow,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: isExpanded ? colors.primary : colors.border,
+                  opacity: pressed ? 0.7 : 1,
+                },
+              ]}
+              onPress={() => setExpandedId(isExpanded ? null : s.addonId)}
+            >
+              {isLoading ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
+              )}
+              <Text style={[styles.addonStatusName, { color: colors.foreground }]} numberOfLines={1}>
+                {s.addonName}
+              </Text>
+              <Text style={[styles.addonStatusDetail, { color: isDone && s.count > 0 ? colors.primary : colors.mutedForeground }]} numberOfLines={1}>
+                {detail}
+              </Text>
+              <Text style={{ color: colors.mutedForeground, marginLeft: 8, fontSize: 12 }}>
+                {isExpanded ? "▲" : "▼"}
+              </Text>
+            </Pressable>
+            {isExpanded ? (
+              <View
+                style={{
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
+                  borderWidth: 1,
+                  borderTopWidth: 0,
+                  marginTop: -6,
+                  marginBottom: 6,
+                  borderBottomLeftRadius: 12,
+                  borderBottomRightRadius: 12,
+                  padding: 12,
+                  gap: 8,
+                }}
+              >
+                <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>ID</Text>
+                <Text selectable style={{ color: colors.foreground, fontSize: 12 }}>{s.addonId}</Text>
+                {s.httpStatus !== undefined ? (
+                  <>
+                    <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>HTTP</Text>
+                    <Text style={{ color: colors.foreground, fontSize: 12 }}>{s.httpStatus}</Text>
+                  </>
+                ) : null}
+                {s.errorMessage ? (
+                  <>
+                    <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>Error</Text>
+                    <Text style={{ color: colors.destructive, fontSize: 12 }}>{s.errorMessage}</Text>
+                  </>
+                ) : null}
+                {s.transportUrl ? (
+                  <>
+                    <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>Transport URL</Text>
+                    <Text selectable style={{ color: colors.foreground, fontSize: 11 }}>{s.transportUrl}</Text>
+                  </>
+                ) : null}
+                {s.requestUrls && s.requestUrls.length > 0 ? (
+                  <>
+                    <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>
+                      Requested {s.requestUrls.length} URL(s)
+                    </Text>
+                    {s.requestUrls.map((u, i) => (
+                      <Text key={i} selectable style={{ color: colors.foreground, fontSize: 11 }}>{u}</Text>
+                    ))}
+                  </>
+                ) : null}
+                {s.responseSnippet ? (
+                  <>
+                    <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>
+                      Response (first 200 chars)
+                    </Text>
+                    <Text selectable style={{ color: colors.foreground, fontSize: 11 }}>{s.responseSnippet}</Text>
+                  </>
+                ) : null}
+                {showConfigWarning ? (
+                  <Text style={{ color: colors.destructive, fontSize: 12, marginTop: 4 }}>
+                    ⚠ No config segment detected in transport URL — this addon may be installed without a Real-Debrid token. Re-install/configure it on web.stremio.com.
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+          </View>
         );
       })}
     </View>
