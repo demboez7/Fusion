@@ -17,6 +17,7 @@ import { CategoryRow } from "@/components/CategoryRow";
 import { ChannelCard } from "@/components/ChannelCard";
 import { ContentCard } from "@/components/ContentCard";
 import { ContinueWatchingCard } from "@/components/ContinueWatchingCard";
+import { Focusable } from "@/components/Focusable";
 import { ShimmerRow } from "@/components/ShimmerCard";
 import { TvContentCard } from "@/components/TvContentCard";
 import { useIptv } from "@/contexts/IptvContext";
@@ -126,20 +127,23 @@ export default function HomeScreen() {
               </View>
             )}
             <View style={styles.heroButtons}>
-              <Pressable
-                style={({ pressed }) => [styles.playBtn, { backgroundColor: colors.primary, opacity: pressed ? 0.8 : 1 }]}
+              <Focusable
+                hasTVPreferredFocus={isTvMode}
+                style={[styles.playBtn, { backgroundColor: colors.primary }]}
+                ringRadius={8}
                 onPress={() => router.push({ pathname: "/detail", params: { type: hero.type, id: hero.id } })}
               >
                 <Feather name="play" size={isTvMode ? 20 : 16} color={colors.primaryForeground} />
                 <Text style={[styles.playBtnText, { color: colors.primaryForeground, fontSize: isTvMode ? 17 : 14 }]}>Play</Text>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [styles.infoBtn, { backgroundColor: colors.surface, opacity: pressed ? 0.8 : 1 }]}
+              </Focusable>
+              <Focusable
+                style={[styles.infoBtn, { backgroundColor: colors.surface }]}
+                ringRadius={8}
                 onPress={() => router.push({ pathname: "/detail", params: { type: hero.type, id: hero.id } })}
               >
                 <Feather name="info" size={isTvMode ? 20 : 16} color={colors.foreground} />
                 <Text style={[styles.infoBtnText, { color: colors.foreground, fontSize: isTvMode ? 17 : 14 }]}>More Info</Text>
-              </Pressable>
+              </Focusable>
             </View>
           </View>
         </Pressable>

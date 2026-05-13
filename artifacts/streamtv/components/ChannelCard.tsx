@@ -1,11 +1,12 @@
 import { Feather } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
-import React from "react";
+import React, { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { EpgBadge } from "@/components/EpgBadge";
 import { useIptv } from "@/contexts/IptvContext";
 import { useColors } from "@/hooks/useColors";
+import { useSettings } from "@/contexts/SettingsContext";
 import { IptvChannel } from "@/services/m3u-parser";
 
 interface Props {
@@ -18,7 +19,10 @@ export function ChannelCard({ channel, onPress, compact = false }: Props) {
   const colors = useColors();
   const router = useRouter();
   const { getCurrentProgram } = useIptv();
+  const { isTvMode } = useSettings();
+  const [focused, setFocused] = useState(false);
   const currentProgram = channel.tvgId ? getCurrentProgram(channel.tvgId) : null;
+  const showRing = isTvMode && focused;
 
   const handlePress = () => {
     if (onPress) {
@@ -34,9 +38,12 @@ export function ChannelCard({ channel, onPress, compact = false }: Props) {
   if (compact) {
     return (
       <Pressable
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         style={({ pressed }) => [
           styles.compact,
           { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.75 : 1 },
+          showRing && { borderColor: colors.focus, borderWidth: 3, transform: [{ scale: 1.02 }] },
         ]}
         onPress={handlePress}
       >
@@ -64,9 +71,12 @@ export function ChannelCard({ channel, onPress, compact = false }: Props) {
 
   return (
     <Pressable
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
       style={({ pressed }) => [
         styles.card,
         { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.75 : 1 },
+        showRing && { borderColor: colors.focus, borderWidth: 3, transform: [{ scale: 1.04 }] },
       ]}
       onPress={handlePress}
     >

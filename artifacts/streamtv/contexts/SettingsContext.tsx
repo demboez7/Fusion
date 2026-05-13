@@ -1,7 +1,22 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { Platform } from "react-native";
+import { Dimensions, Platform } from "react-native";
 import { tmdbEnabled } from "@/services/tmdb";
+
+/**
+ * Best-effort TV detection. `Platform.isTV` is unreliable on sideloaded
+ * APKs (many Android TV / Google TV boxes report false). As a fallback we
+ * treat any large Android display (>= 960dp on shortest side) as a TV.
+ */
+function detectTv(): boolean {
+  if (Platform.isTV) return true;
+  if (Platform.OS === "android") {
+    const { width, height } = Dimensions.get("screen");
+    const longest = Math.max(width, height);
+    if (longest >= 960) return true;
+  }
+  return false;
+}
 
 interface SettingsContextValue {
   useTmdb: boolean;
@@ -33,7 +48,7 @@ const DEFAULT_HIDDEN_STREAM_ADDONS: string[] = [
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const available = tmdbEnabled();
   const [useTmdb, setUseTmdbState] = useState(available);
-  const isNativeTV = Platform.isTV ?? false;
+  const isNativeTV = detectTv();
   const [manualTvMode, setManualTvModeState] = useState<boolean | null>(null);
   const [hiddenStreamAddons, setHiddenStreamAddonsState] =
     useState<string[]>(DEFAULT_HIDDEN_STREAM_ADDONS);

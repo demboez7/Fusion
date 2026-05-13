@@ -1,10 +1,11 @@
 import { Feather } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
-import React from "react";
+import React, { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useProgress, type ProgressEntry } from "@/contexts/ProgressContext";
 import { useColors } from "@/hooks/useColors";
+import { useSettings } from "@/contexts/SettingsContext";
 
 interface Props {
   entry: ProgressEntry;
@@ -15,7 +16,10 @@ export function ContinueWatchingCard({ entry, width = 160 }: Props) {
   const colors = useColors();
   const router = useRouter();
   const { clearProgress } = useProgress();
+  const { isTvMode } = useSettings();
+  const [focused, setFocused] = useState(false);
   const height = Math.round(width * 0.62);
+  const showRing = isTvMode && focused;
 
   const pct = entry.duration > 0 ? Math.min(1, Math.max(0, entry.position / entry.duration)) : 0;
   const remaining = Math.max(0, entry.duration - entry.position);
@@ -26,7 +30,13 @@ export function ContinueWatchingCard({ entry, width = 160 }: Props) {
 
   return (
     <Pressable
-      style={({ pressed }) => [styles.container, { width, opacity: pressed ? 0.75 : 1 }]}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      style={({ pressed }) => [
+        styles.container,
+        { width, opacity: pressed ? 0.75 : 1 },
+        showRing && { transform: [{ scale: 1.05 }] },
+      ]}
       onPress={() => {
         // If we know the last-played stream, resume it directly. Fall back
         // to the detail page (e.g. when the user cleared their player or
@@ -52,7 +62,11 @@ export function ContinueWatchingCard({ entry, width = 160 }: Props) {
         }
       }}
     >
-      <View style={[styles.thumb, { width, height, backgroundColor: colors.card }]}>
+      <View style={[
+        styles.thumb,
+        { width, height, backgroundColor: colors.card },
+        showRing && { borderWidth: 3, borderColor: colors.focus },
+      ]}>
         {entry.background || entry.poster ? (
           <Image
             source={{ uri: entry.background ?? entry.poster }}

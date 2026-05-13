@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useIptv } from "@/contexts/IptvContext";
+import { useSettings } from "@/contexts/SettingsContext";
 import { useStremio } from "@/contexts/StremioContext";
 import { useColors } from "@/hooks/useColors";
 
@@ -27,6 +28,7 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { isLoggedIn, user, login, logout, addons } = useStremio();
   const { playlistUrl, setPlaylistUrl, channels } = useIptv();
+  const { isTvMode, setTvMode } = useSettings();
 
   const [showLogin, setShowLogin] = useState(false);
   const [email, setEmail] = useState("");
@@ -101,6 +103,38 @@ export default function SettingsScreen() {
         <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
           <Text style={[styles.heading, { color: colors.foreground }]}>Settings</Text>
         </View>
+
+        <SectionHeader title="DISPLAY" />
+        <Pressable
+          style={({ pressed }) => [
+            styles.row,
+            { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.75 : 1 },
+          ]}
+          onPress={() => setTvMode(!isTvMode)}
+        >
+          <View style={styles.rowLeft}>
+            <Feather name="tv" size={18} color={colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.rowLabel, { color: colors.foreground }]}>TV Mode</Text>
+              <Text style={[styles.rowSub, { color: colors.mutedForeground }]} numberOfLines={2}>
+                Bigger cards, top tab bar, and remote-friendly focus rings for Android TV.
+              </Text>
+            </View>
+          </View>
+          <View
+            style={{
+              width: 48,
+              height: 28,
+              borderRadius: 14,
+              backgroundColor: isTvMode ? colors.primary : colors.muted,
+              padding: 3,
+              alignItems: isTvMode ? "flex-end" : "flex-start",
+              justifyContent: "center",
+            }}
+          >
+            <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: "#fff" }} />
+          </View>
+        </Pressable>
 
         <SectionHeader title="STREMIO ACCOUNT" />
         {isLoggedIn && user ? (
