@@ -11,6 +11,8 @@ interface SettingsContextValue {
   setTvMode: (v: boolean) => Promise<void>;
   hiddenStreamAddons: string[];
   setHiddenStreamAddons: (v: string[]) => Promise<void>;
+  preferredSubtitleLanguage: string | null;
+  setPreferredSubtitleLanguage: (v: string | null) => Promise<void>;
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
@@ -18,6 +20,7 @@ const SettingsContext = createContext<SettingsContextValue | null>(null);
 const STORAGE_USE_TMDB = "settings_use_tmdb";
 const STORAGE_TV_MODE = "settings_tv_mode";
 const STORAGE_HIDDEN_ADDONS = "settings_hidden_stream_addons_v1";
+const STORAGE_PREF_SUB_LANG = "settings_pref_subtitle_lang_v1";
 
 const DEFAULT_HIDDEN_STREAM_ADDONS: string[] = [
   "Local Files",
@@ -34,12 +37,15 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [manualTvMode, setManualTvModeState] = useState<boolean | null>(null);
   const [hiddenStreamAddons, setHiddenStreamAddonsState] =
     useState<string[]>(DEFAULT_HIDDEN_STREAM_ADDONS);
+  const [preferredSubtitleLanguage, setPreferredSubtitleLanguageState] =
+    useState<string | null>(null);
   // Track whether the user has issued any local writes for these settings
   // before async hydration completes. If so, skip applying the hydrated
   // values to avoid clobbering the just-saved state.
   const userWroteUseTmdbRef = useRef(false);
   const userWroteTvModeRef = useRef(false);
   const userWroteHiddenRef = useRef(false);
+  const userWrotePrefLangRef = useRef(false);
 
   const isTvMode = manualTvMode !== null ? manualTvMode : isNativeTV;
 
@@ -48,7 +54,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       AsyncStorage.getItem(STORAGE_USE_TMDB),
       AsyncStorage.getItem(STORAGE_TV_MODE),
       AsyncStorage.getItem(STORAGE_HIDDEN_ADDONS),
-    ]).then(([tmdb, tv, hidden]) => {
+      AsyncStorage.getItem(STORAGE_PREF_SUB_LANG),
+    ]).then(([tmdb, tv, hidden, prefLang]) => {
       if (!userWroteUseTmdbRef.current) {
         if (tmdb !== null) setUseTmdbState(tmdb === "true" && available);
         else setUseTmdbState(available);
@@ -65,6 +72,9 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         } catch {
           // ignore corrupt value, keep defaults
         }
+      }
+      if (!userWrotePrefLangRef.current && prefLang !== null) {
+        setPreferredSubtitleLanguageState(prefLang.length > 0 ? prefLang : null);
       }
     });
   }, [available]);
@@ -88,6 +98,12 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     await AsyncStorage.setItem(STORAGE_HIDDEN_ADDONS, JSON.stringify(cleaned));
   }, []);
 
+  const setPreferredSubtitleLanguage = useCallback(async (v: string | null) => {
+    userWrotePrefLangRef.current = true;
+    setPreferredSubtitleLanguageState(v);
+    await AsyncStorage.setItem(STORAGE_PREF_SUB_LANG, v ?? "");
+  }, []);
+
   return (
     <SettingsContext.Provider
       value={{
@@ -98,6 +114,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         setTvMode,
         hiddenStreamAddons,
         setHiddenStreamAddons,
+        preferredSubtitleLanguage,
+        setPreferredSubtitleLanguage,
       }}
     >
       {children}

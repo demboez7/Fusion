@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useProgress } from "@/contexts/ProgressContext";
+import { useSettings } from "@/contexts/SettingsContext";
 import { useStremio } from "@/contexts/StremioContext";
 import { useColors } from "@/hooks/useColors";
 import { StremioSubtitle } from "@/services/stremio";
@@ -203,6 +204,7 @@ export default function PlayerScreen() {
   const insets = useSafeAreaInsets();
   const { getSubtitles, subtitleAddonsCount } = useStremio();
   const { recordProgress } = useProgress();
+  const { preferredSubtitleLanguage, setPreferredSubtitleLanguage } = useSettings();
   const lastProgressSaveRef = useRef(0);
 
   const [error, setError] = useState<string | null>(null);
@@ -217,6 +219,12 @@ export default function PlayerScreen() {
   const [loadingExternalSub, setLoadingExternalSub] = useState(false);
   const [externalSubError, setExternalSubError] = useState<string | null>(null);
   const cuesRef = useRef<SubtitleCue[] | null>(null);
+  // Subtitle filter (chip): null = "All", otherwise the pretty language name.
+  const [languageFilter, setLanguageFilter] = useState<string | null>(null);
+  // Subtitle timing offset in seconds. Positive = subs appear later (delay),
+  // negative = subs appear earlier (advance).
+  const [subtitleOffset, setSubtitleOffset] = useState(0);
+  const subtitleOffsetRef = useRef(0);
 
   const player = useVideoPlayer(url ?? "", (p) => {
     p.play();
@@ -274,7 +282,9 @@ export default function PlayerScreen() {
       }
       const cues = cuesRef.current;
       if (!cues || cues.length === 0) return;
-      const cue = findActiveCue(cues, ev.currentTime);
+      // Apply manual offset: positive offset delays subs, so we look up the
+      // cue that *would* be active subtitleOffset seconds ago.
+      const cue = findActiveCue(cues, ev.currentTime - subtitleOffsetRef.current);
       setActiveCueText((prev) => {
         const next = cue ? cue.text : null;
         return prev === next ? prev : next;
@@ -291,6 +301,22 @@ export default function PlayerScreen() {
     cuesRef.current = externalCues;
     if (!externalCues) setActiveCueText(null);
   }, [externalCues]);
+
+  useEffect(() => {
+    subtitleOffsetRef.current = subtitleOffset;
+  }, [subtitleOffset]);
+
+  // Apply the persisted preferred language as the default chip filter once
+  // we've loaded addon subs (only if that language actually has results).
+  useEffect(() => {
+    if (!addonSubsLoaded || addonTracks.length === 0) return;
+    if (languageFilter !== null) return;
+    if (!preferredSubtitleLanguage) return;
+    const hasMatch = addonTracks.some(
+      (t) => t.language.toLowerCase() === preferredSubtitleLanguage.toLowerCase(),
+    );
+    if (hasMatch) setLanguageFilter(preferredSubtitleLanguage);
+  }, [addonSubsLoaded, addonTracks, preferredSubtitleLanguage, languageFilter]);
 
   const loadAddonSubtitles = async () => {
     if (addonSubsLoaded || loadingAddonSubs) return;
@@ -336,6 +362,12 @@ export default function PlayerScreen() {
       try {
         const cues = await fetchSubtitleCues(option.url);
         setExternalCues(cues);
+        // Reset timing offset whenever the user picks a new subtitle file.
+        setSubtitleOffset(0);
+        // Remember this language as the preferred default for next time.
+        if (option.language && option.language !== "Unknown") {
+          setPreferredSubtitleLanguage(option.language).catch(() => {});
+        }
         try {
           (player as unknown as { subtitleTrack: null }).subtitleTrack = null;
         } catch {}
@@ -373,8 +405,34 @@ export default function PlayerScreen() {
 
   const allTracks: SubtitleOption[] = [...embeddedTracks, ...addonTracks];
 
+  // Unique language list for the filter chip row, with counts.
+  const languageCounts = new Map<string, number>();
+  for (const t of addonTracks) {
+    languageCounts.set(t.language, (languageCounts.get(t.language) ?? 0) + 1);
+  }
+  const availableLanguages = Array.from(languageCounts.entries()).sort((a, b) =>
+    a[0].localeCompare(b[0]),
+  );
+
+  const filteredAddonTracks =
+    languageFilter === null
+      ? addonTracks
+      : addonTracks.filter(
+          (t) => t.language.toLowerCase() === languageFilter.toLowerCase(),
+        );
+
   const openExternal = () => {
     if (url) Linking.openURL(url).catch(() => {});
+  };
+
+  const adjustOffset = (delta: number) => {
+    setSubtitleOffset((prev) => {
+      const next = Math.round((prev + delta) * 100) / 100;
+      // Clamp to a sane range so users can't accidentally seek 10 minutes off.
+      if (next > 60) return 60;
+      if (next < -60) return -60;
+      return next;
+    });
   };
 
   return (
@@ -459,6 +517,55 @@ export default function PlayerScreen() {
               <Text style={[styles.subtitleLabel, { color: colors.foreground }]}>Off</Text>
             </Pressable>
 
+            {/* Subtitle sync (only when an external subtitle is active) */}
+            {externalCues && (
+              <>
+                <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
+                  Sync timing
+                </Text>
+                <View style={styles.syncRow}>
+                  <Pressable
+                    style={[styles.syncBtn, { backgroundColor: colors.surface }]}
+                    onPress={() => adjustOffset(-1)}
+                  >
+                    <Text style={[styles.syncBtnText, { color: colors.foreground }]}>-1s</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.syncBtn, { backgroundColor: colors.surface }]}
+                    onPress={() => adjustOffset(-0.25)}
+                  >
+                    <Text style={[styles.syncBtnText, { color: colors.foreground }]}>-0.25s</Text>
+                  </Pressable>
+                  <View style={styles.syncValueWrap}>
+                    <Text style={[styles.syncValue, { color: colors.foreground }]}>
+                      {subtitleOffset > 0 ? "+" : ""}
+                      {subtitleOffset.toFixed(2)}s
+                    </Text>
+                    {subtitleOffset !== 0 && (
+                      <Pressable onPress={() => setSubtitleOffset(0)} hitSlop={8}>
+                        <Text style={[styles.syncReset, { color: colors.primary }]}>Reset</Text>
+                      </Pressable>
+                    )}
+                  </View>
+                  <Pressable
+                    style={[styles.syncBtn, { backgroundColor: colors.surface }]}
+                    onPress={() => adjustOffset(0.25)}
+                  >
+                    <Text style={[styles.syncBtnText, { color: colors.foreground }]}>+0.25s</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.syncBtn, { backgroundColor: colors.surface }]}
+                    onPress={() => adjustOffset(1)}
+                  >
+                    <Text style={[styles.syncBtnText, { color: colors.foreground }]}>+1s</Text>
+                  </Pressable>
+                </View>
+                <Text style={[styles.subtitleHint, { color: colors.mutedForeground, paddingHorizontal: 8 }]}>
+                  Subs early? Use +. Subs late? Use −.
+                </Text>
+              </>
+            )}
+
             {embeddedTracks.length > 0 && (
               <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>Embedded in stream</Text>
             )}
@@ -500,7 +607,71 @@ export default function PlayerScreen() {
                 Couldn&apos;t load subtitle: {externalSubError}
               </Text>
             )}
-            {addonTracks.map((track) => {
+
+            {/* Language filter chips */}
+            {availableLanguages.length > 1 && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.langChipRow}
+              >
+                <Pressable
+                  style={[
+                    styles.langChip,
+                    { backgroundColor: colors.surface },
+                    languageFilter === null && { backgroundColor: colors.primary },
+                  ]}
+                  onPress={() => setLanguageFilter(null)}
+                >
+                  <Text
+                    style={[
+                      styles.langChipText,
+                      {
+                        color:
+                          languageFilter === null
+                            ? colors.primaryForeground
+                            : colors.foreground,
+                      },
+                    ]}
+                  >
+                    All ({addonTracks.length})
+                  </Text>
+                </Pressable>
+                {availableLanguages.map(([lang, count]) => {
+                  const active = languageFilter?.toLowerCase() === lang.toLowerCase();
+                  return (
+                    <Pressable
+                      key={lang}
+                      style={[
+                        styles.langChip,
+                        { backgroundColor: colors.surface },
+                        active && { backgroundColor: colors.primary },
+                      ]}
+                      onPress={() => {
+                        setLanguageFilter(lang);
+                        setPreferredSubtitleLanguage(lang).catch(() => {});
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.langChipText,
+                          { color: active ? colors.primaryForeground : colors.foreground },
+                        ]}
+                      >
+                        {lang} ({count})
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            )}
+
+            {filteredAddonTracks.length === 0 && addonTracks.length > 0 && (
+              <Text style={[styles.noSubText, { color: colors.mutedForeground }]}>
+                No subtitles in {languageFilter}. Tap All above to see every result.
+              </Text>
+            )}
+            {filteredAddonTracks.map((track) => {
               const isSelected = selectedSubtitle === track.id;
               return (
                 <Pressable
@@ -581,6 +752,15 @@ const styles = StyleSheet.create({
   subtitleHint: { fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 2 },
   loadingRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 14, paddingHorizontal: 8 },
   noSubText: { fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 20, paddingVertical: 12, paddingHorizontal: 8 },
+  langChipRow: { gap: 8, paddingHorizontal: 8, paddingVertical: 8 },
+  langChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 },
+  langChipText: { fontSize: 13, fontFamily: "Inter_500Medium" },
+  syncRow: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 4, paddingVertical: 8 },
+  syncBtn: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8 },
+  syncBtnText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  syncValueWrap: { flex: 1, alignItems: "center" },
+  syncValue: { fontSize: 14, fontFamily: "Inter_700Bold" },
+  syncReset: { fontSize: 11, fontFamily: "Inter_500Medium", marginTop: 2 },
   subtitleOverlay: {
     position: "absolute",
     left: 16,
