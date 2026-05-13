@@ -215,15 +215,25 @@ export default function DetailScreen() {
       (routeIdHead.startsWith("tt") ? routeIdHead : undefined);
     let imdbForCall: string | undefined;
     if (baseImdb) {
-      // For series episodes, the streamId may be "<catalogId>:S:E" — append
-      // the season/episode tail to the IMDB id too.
       const sidParts = sid.split(":");
       const sidHead = sidParts[0];
-      const sidTail = sidParts.slice(1).join(":");
       if (sidHead.startsWith("tt")) {
+        // Already an IMDB id (possibly "tt12345:S:E") — use as-is.
         imdbForCall = sid;
+      } else if (type === "series" && sidParts.length >= 3) {
+        // Non-IMDB catalog id like "tmdb:67890:1:5" or "kitsu:42:1:5".
+        // The last two parts are the S:E pair we want; drop the catalog
+        // prefix + source id and graft only "S:E" onto the imdb id.
+        const s = sidParts[sidParts.length - 2];
+        const e = sidParts[sidParts.length - 1];
+        if (/^\d{1,4}$/.test(s) && /^\d{1,4}$/.test(e)) {
+          imdbForCall = `${baseImdb}:${s}:${e}`;
+        } else {
+          imdbForCall = baseImdb;
+        }
       } else {
-        imdbForCall = sidTail ? `${baseImdb}:${sidTail}` : baseImdb;
+        // Movie (or anything else): pass the bare IMDB id only.
+        imdbForCall = baseImdb;
       }
     }
     setLoadingStreams(true);

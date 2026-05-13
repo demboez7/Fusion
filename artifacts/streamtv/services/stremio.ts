@@ -143,11 +143,18 @@ export interface AddonStreamProgress {
   responseSnippet?: string;
 }
 
-// Mask any long alphanumeric token following an "=" sign so RD/AD/Premiumize
-// keys are not visible in the diagnostic Alert. Tokens of 12+ chars are
-// replaced with "***".
+// Mask credentials embedded in addon URLs so they can be safely shown in
+// the diagnostic UI. Covers two patterns:
+//   1. "key=TOKEN" style query/path segments (Torrentio, Peerflix, etc.)
+//   2. URL-encoded JSON config blobs that include "apiKey":"TOKEN" or
+//      base64-packed config segments (Sootio, TorrentsDB, Jackettio).
+// Any standalone alphanumeric run of 20+ characters is replaced with ***
+// — long enough to avoid masking domain segments / words but short enough
+// to catch real RD / AD / Premiumize keys.
 export function redactAddonUrl(url: string): string {
-  return url.replace(/=([A-Za-z0-9]{12,})/g, "=***");
+  return url
+    .replace(/=([A-Za-z0-9]{12,})/g, "=***")
+    .replace(/[A-Za-z0-9]{20,}/g, "***");
 }
 
 export interface LoginResult {
@@ -401,10 +408,14 @@ function buildIdCandidates(primaryId: string, imdbId?: string): string[] {
   if (!imdbId) return out;
   // Already an IMDB id? nothing to add.
   const head = primaryId.split(":")[0];
-  if (head === imdbId || head.startsWith("tt")) return out;
-  const tail = primaryId.includes(":") ? primaryId.split(":").slice(1).join(":") : "";
-  const imdbVariant = tail ? `${imdbId}:${tail}` : imdbId;
-  if (!out.includes(imdbVariant)) out.push(imdbVariant);
+  if (head.startsWith("tt") || primaryId === imdbId) return out;
+  // Trust the caller to pass a well-formed imdbId. For movies it should
+  // be "tt12345"; for series episodes it should already include the
+  // ":S:E" tail (e.g. "tt12345:1:5"). Do NOT try to graft the primary
+  // id's tail onto the imdb id here — primary ids of the form
+  // "tmdb:67890" have a tail that is the TMDB number, not a S:E pair,
+  // and concatenating it produces invalid ids that addons reject.
+  if (!out.includes(imdbId)) out.push(imdbId);
   return out;
 }
 
