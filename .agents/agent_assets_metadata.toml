@@ -1,5 +1,4 @@
 uploads = []
-outputs = []
 
 [[generated]]
 id = "bo62c7y8G6z9D2OdVE7Al"
@@ -18,3 +17,9 @@ id = "sog5WutqeCFYhy-9eO7r_"
 uri = "file://attached_assets/generated_images/app_icon_square_1024x1024_cfd2.png"
 type = "image"
 title = "generated_image"
+
+[[outputs]]
+id = "nQpi8Heb9O9w34Jmg5kSJ"
+uri = "file://artifacts/streamtv/README.md"
+type = "text"
+title = "Fusion — README"
