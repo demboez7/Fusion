@@ -18,6 +18,12 @@ uri = "file://attached_assets/generated_images/app_icon_square_1024x1024_cfd2.pn
 type = "image"
 title = "generated_image"
 
+[[generated]]
+id = "M7lGU5zAdbcmSn8-BpgMQ"
+uri = "file://attached_assets/generated_images/modern_mobile_app_icon_e255.png"
+type = "image"
+title = "generated_image"
+
 [[outputs]]
 id = "nQpi8Heb9O9w34Jmg5kSJ"
 uri = "file://artifacts/streamtv/README.md"
