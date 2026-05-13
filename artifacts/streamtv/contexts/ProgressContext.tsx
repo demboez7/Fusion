@@ -12,6 +12,11 @@ export interface ProgressEntry {
   duration: number;
   updatedAt: number;
   episodeLabel?: string;
+  // Last stream the user pressed for this title — used by the
+  // Continue Watching row to resume playback directly.
+  lastStreamUrl?: string;
+  lastStreamTitle?: string;
+  lastStreamSubtitleId?: string;
 }
 
 interface ProgressContextValue {

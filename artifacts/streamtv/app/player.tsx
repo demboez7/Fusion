@@ -181,6 +181,7 @@ export default function PlayerScreen() {
     poster,
     background,
     episodeLabel,
+    resumePosition,
   } = useLocalSearchParams<{
     url: string;
     title: string;
@@ -191,7 +192,10 @@ export default function PlayerScreen() {
     poster?: string;
     background?: string;
     episodeLabel?: string;
+    resumePosition?: string;
   }>();
+  const resumeSeconds = resumePosition ? Number(resumePosition) : 0;
+  const resumedRef = useRef(false);
   const router = useRouter();
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -222,6 +226,15 @@ export default function PlayerScreen() {
       if (ev.status === "error") {
         setError("Stream failed to load. The codec or container may not be supported.");
       }
+      // Seek to the saved position the first time the player is ready.
+      if (ev.status === "readyToPlay" && !resumedRef.current && resumeSeconds > 5) {
+        resumedRef.current = true;
+        try {
+          player.currentTime = resumeSeconds;
+        } catch {
+          // ignore — some platforms reject seeking before metadata is ready
+        }
+      }
     });
     const trackSub = player.addListener("availableSubtitleTracksChange" as never, (ev: unknown) => {
       if (ev && typeof ev === "object" && "availableSubtitleTracks" in ev) {
@@ -250,6 +263,9 @@ export default function PlayerScreen() {
               position: ev.currentTime,
               duration: dur,
               episodeLabel,
+              lastStreamUrl: url,
+              lastStreamTitle: title,
+              lastStreamSubtitleId: subtitleId,
             });
           }
         }

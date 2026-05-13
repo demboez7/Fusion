@@ -297,7 +297,8 @@ export default function DetailScreen() {
           return next;
         });
         if (p.status === "done" && p.streams.length > 0) {
-          setStreams((prev) => [...prev, ...p.streams]);
+          const stamped = p.streams.map((s) => ({ ...s, addonName: s.addonName ?? p.addonName }));
+          setStreams((prev) => [...prev, ...stamped]);
         }
       }, imdbForCall);
       setStreams((current) => {
@@ -826,6 +827,26 @@ function StreamsList({
   const loadingCount = addonStatuses.filter((a) => a.status === "loading").length;
   const totalCount = addonStatuses.length;
 
+  // Build the addon-filter tab list from the playable streams. Order by
+  // first appearance so it matches the order Stremio returned results in.
+  const addonTabs: { name: string; count: number }[] = [];
+  for (const s of direct) {
+    const name = s.addonName ?? "Other";
+    const existing = addonTabs.find((t) => t.name === name);
+    if (existing) existing.count += 1;
+    else addonTabs.push({ name, count: 1 });
+  }
+  const [selectedAddon, setSelectedAddon] = useState<string>("All");
+  // If the previously selected addon vanished (rare — e.g. streams cleared),
+  // fall back to "All".
+  useEffect(() => {
+    if (selectedAddon !== "All" && !addonTabs.some((t) => t.name === selectedAddon)) {
+      setSelectedAddon("All");
+    }
+  }, [addonTabs, selectedAddon]);
+  const visibleStreams =
+    selectedAddon === "All" ? direct : direct.filter((s) => (s.addonName ?? "Other") === selectedAddon);
+
   return (
     <View style={compact ? styles.streamsSectionCompact : styles.streamsSection}>
       {!compact && totalCount > 0 && (
@@ -845,7 +866,43 @@ function StreamsList({
         </View>
       ) : null}
 
-      {direct.map((stream, i) => (
+      {addonTabs.length > 1 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.addonTabsRow}
+        >
+          {[{ name: "All", count: direct.length }, ...addonTabs].map((tab) => {
+            const active = selectedAddon === tab.name;
+            return (
+              <Pressable
+                key={tab.name}
+                onPress={() => setSelectedAddon(tab.name)}
+                style={({ pressed }) => [
+                  styles.addonTabChip,
+                  {
+                    backgroundColor: active ? colors.primary : "transparent",
+                    opacity: pressed ? 0.7 : 1,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.addonTabChipText,
+                    { color: active ? colors.primaryForeground : colors.mutedForeground },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {tab.name}
+                  {tab.name !== "All" ? ` · ${tab.count}` : ""}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      )}
+
+      {visibleStreams.map((stream, i) => (
         <Pressable
           key={`direct-${i}`}
           style={({ pressed }) => [styles.streamRow, { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.75 : 1 }]}
@@ -940,6 +997,9 @@ const styles = StyleSheet.create({
   addonRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   addonChip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, borderWidth: 1 },
   addonChipText: { fontSize: 11, fontFamily: "Inter_500Medium" },
+  addonTabsRow: { gap: 6, paddingVertical: 6, paddingHorizontal: 2 },
+  addonTabChip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 18 },
+  addonTabChipText: { fontSize: 12, fontFamily: "Inter_600SemiBold", maxWidth: 200 },
   addonStatusList: { gap: 4, marginBottom: 4 },
   addonStatusRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, borderWidth: 1 },
   statusDot: { width: 8, height: 8, borderRadius: 4 },

@@ -27,7 +27,30 @@ export function ContinueWatchingCard({ entry, width = 160 }: Props) {
   return (
     <Pressable
       style={({ pressed }) => [styles.container, { width, opacity: pressed ? 0.75 : 1 }]}
-      onPress={() => router.push({ pathname: "/detail", params: { type: entry.type, id: entry.id } })}
+      onPress={() => {
+        // If we know the last-played stream, resume it directly. Fall back
+        // to the detail page (e.g. when the user cleared their player or
+        // only the progress entry is present).
+        if (entry.lastStreamUrl) {
+          router.push({
+            pathname: "/player",
+            params: {
+              url: entry.lastStreamUrl,
+              title: entry.lastStreamTitle ?? entry.name,
+              type: entry.type,
+              subtitleId: entry.lastStreamSubtitleId ?? "",
+              progressKey: entry.key,
+              progressId: entry.id,
+              poster: entry.poster ?? "",
+              background: entry.background ?? "",
+              episodeLabel: entry.episodeLabel ?? "",
+              resumePosition: String(Math.floor(entry.position)),
+            },
+          });
+        } else {
+          router.push({ pathname: "/detail", params: { type: entry.type, id: entry.id } });
+        }
+      }}
     >
       <View style={[styles.thumb, { width, height, backgroundColor: colors.card }]}>
         {entry.background || entry.poster ? (

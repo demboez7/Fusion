@@ -110,6 +110,9 @@ export interface StremioStream {
     notWebReady?: boolean;
     bingeGroup?: string;
   };
+  // Stamped by detail.tsx when collecting streams from each addon, so the
+  // UI can group/filter playable streams by their source addon.
+  addonName?: string;
 }
 
 export interface StremioSubtitle {
