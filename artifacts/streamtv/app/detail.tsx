@@ -204,8 +204,24 @@ export default function DetailScreen() {
   }, [tmdbId, selectedSeason, useTmdb]);
 
   const loadStreams = async (streamId?: string) => {
-    const sid = streamId ?? id;
-    if (!type || !sid || loadingStreams) return;
+    const rawSid = streamId ?? id;
+    if (!type || !rawSid || loadingStreams) return;
+    // Some catalogs (e.g. TMDB-Cinemeta variants) hand us movie ids of the
+    // form "tt12345:67890:67890" where 67890 is the TMDB id repeated. Real
+    // Stremio movie ids are just "tt12345"; for series episodes they're
+    // "tt12345:S:E" with small season/episode numbers. Strip any trailing
+    // junk so strict addons (Sootio, Peerflix) don't reject the request.
+    let sid = rawSid;
+    if (rawSid.startsWith("tt")) {
+      const parts = rawSid.split(":");
+      if (type === "movie") {
+        sid = parts[0];
+      } else if (type === "series" && parts.length >= 3) {
+        const s = parts[parts.length - 2];
+        const e = parts[parts.length - 1];
+        sid = /^\d{1,4}$/.test(s) && /^\d{1,4}$/.test(e) ? `${parts[0]}:${s}:${e}` : parts[0];
+      }
+    }
     // Derive an IMDB id to also try against debrid addons that only key
     // on tt… ids (Torrentio/Comet/Jackettio/etc.). Prefer meta.imdb_id;
     // fall back to the route id itself if it's already tt-prefixed.
