@@ -16,9 +16,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CategoryRow } from "@/components/CategoryRow";
 import { ChannelCard } from "@/components/ChannelCard";
 import { ContentCard } from "@/components/ContentCard";
+import { ContinueWatchingCard } from "@/components/ContinueWatchingCard";
 import { ShimmerRow } from "@/components/ShimmerCard";
 import { TvContentCard } from "@/components/TvContentCard";
 import { useIptv } from "@/contexts/IptvContext";
+import { useProgress } from "@/contexts/ProgressContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useStremio } from "@/contexts/StremioContext";
 import { useColors } from "@/hooks/useColors";
@@ -32,6 +34,15 @@ export default function HomeScreen() {
   const { getMovies, getSeries, getCatalogRows, addons, isLoading: stremioLoading } = useStremio();
   const { channels } = useIptv();
   const { isTvMode } = useSettings();
+  const { entries: progressEntries } = useProgress();
+  // Continue-watching items: anything between 2% and 95% watched, most recent first.
+  const continueWatching = progressEntries
+    .filter((e) => {
+      if (!e.duration || e.duration < 60) return false;
+      const pct = e.position / e.duration;
+      return pct > 0.02 && pct < 0.95;
+    })
+    .slice(0, 12);
 
   const [rows, setRows] = useState<CatalogRow[]>([]);
   const [fallbackMovies, setFallbackMovies] = useState<StremioMeta[]>([]);
@@ -137,6 +148,15 @@ export default function HomeScreen() {
       )}
 
       <View style={[styles.content, { paddingTop: isTvMode ? 28 : 20 }]}>
+        {continueWatching.length > 0 && (
+          <CategoryRow
+            title="Continue Watching"
+            data={continueWatching}
+            keyExtractor={(e) => e.key}
+            renderItem={({ item }) => <ContinueWatchingCard entry={item} width={isTvMode ? 220 : 160} />}
+          />
+        )}
+
         {liveChannels.length > 0 && (
           <CategoryRow
             title="Live TV"

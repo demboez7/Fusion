@@ -14,6 +14,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useProgress } from "@/contexts/ProgressContext";
 import { useStremio } from "@/contexts/StremioContext";
 import { useColors } from "@/hooks/useColors";
 import { StremioSubtitle } from "@/services/stremio";
@@ -170,16 +171,33 @@ function sortSubtitles(options: SubtitleOption[]): SubtitleOption[] {
 }
 
 export default function PlayerScreen() {
-  const { url, title, type, subtitleId } = useLocalSearchParams<{
+  const {
+    url,
+    title,
+    type,
+    subtitleId,
+    progressKey,
+    progressId,
+    poster,
+    background,
+    episodeLabel,
+  } = useLocalSearchParams<{
     url: string;
     title: string;
     type?: string;
     subtitleId?: string;
+    progressKey?: string;
+    progressId?: string;
+    poster?: string;
+    background?: string;
+    episodeLabel?: string;
   }>();
   const router = useRouter();
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { getSubtitles, subtitleAddonsCount } = useStremio();
+  const { recordProgress } = useProgress();
+  const lastProgressSaveRef = useRef(0);
 
   const [error, setError] = useState<string | null>(null);
   const [showSubtitles, setShowSubtitles] = useState(false);
@@ -215,6 +233,27 @@ export default function PlayerScreen() {
       }
     });
     const timeSub = player.addListener("timeUpdate", (ev) => {
+      // Save watch progress at most every 5s.
+      if (progressKey && progressId && type) {
+        const now = Date.now();
+        if (now - lastProgressSaveRef.current > 5000) {
+          const dur = player.duration ?? 0;
+          if (dur > 30 && ev.currentTime > 5) {
+            lastProgressSaveRef.current = now;
+            recordProgress({
+              key: progressKey,
+              type,
+              id: progressId,
+              name: title ?? "",
+              poster,
+              background,
+              position: ev.currentTime,
+              duration: dur,
+              episodeLabel,
+            });
+          }
+        }
+      }
       const cues = cuesRef.current;
       if (!cues || cues.length === 0) return;
       const cue = findActiveCue(cues, ev.currentTime);

@@ -16,6 +16,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { IptvProvider } from "@/contexts/IptvContext";
+import { ProgressProvider } from "@/contexts/ProgressContext";
 import { SettingsProvider } from "@/contexts/SettingsContext";
 import { StremioProvider } from "@/contexts/StremioContext";
 
@@ -58,11 +59,13 @@ export default function RootLayout() {
           <SettingsProvider>
             <StremioProvider>
               <IptvProvider>
-                <GestureHandlerRootView style={{ flex: 1 }}>
-                  <KeyboardProvider>
-                    <RootLayoutNav />
-                  </KeyboardProvider>
-                </GestureHandlerRootView>
+                <ProgressProvider>
+                  <GestureHandlerRootView style={{ flex: 1 }}>
+                    <KeyboardProvider>
+                      <RootLayoutNav />
+                    </KeyboardProvider>
+                  </GestureHandlerRootView>
+                </ProgressProvider>
               </IptvProvider>
             </StremioProvider>
           </SettingsProvider>

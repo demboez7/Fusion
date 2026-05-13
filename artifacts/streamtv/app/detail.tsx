@@ -352,6 +352,12 @@ export default function DetailScreen() {
       const subtitleId = activeEpisode && routeId.startsWith("tt")
         ? `${routeId.split(":")[0]}:${activeEpisode.season}:${activeEpisode.episode}`
         : (activeEpisode?.id ?? routeId);
+      const progressKey = activeEpisode
+        ? `${type}:${routeId.split(":")[0]}:${activeEpisode.season}:${activeEpisode.episode}`
+        : `${type}:${routeId}`;
+      const episodeLabel = activeEpisode
+        ? `S${activeEpisode.season}E${activeEpisode.episode}`
+        : undefined;
       router.push({
         pathname: "/player",
         params: {
@@ -361,6 +367,11 @@ export default function DetailScreen() {
             : (meta?.name ?? "Stream"),
           type: type ?? "",
           subtitleId,
+          progressKey,
+          progressId: routeId,
+          poster: meta?.poster ?? "",
+          background: meta?.background ?? "",
+          episodeLabel: episodeLabel ?? "",
         },
       });
     }
