@@ -689,8 +689,13 @@ function AddonStatusList({
               : s.count === 0
                 ? `no streams · ${(s.durationMs / 1000).toFixed(1)}s`
                 : `${s.count} stream${s.count === 1 ? "" : "s"} · ${(s.durationMs / 1000).toFixed(1)}s`;
+        // Heuristic: a transport URL has a config segment if either
+        // (a) it contains a redacted token marker "***" (meaning we
+        // masked at least one secret), or (b) it's long enough that
+        // it can't be just "<host>/manifest.json".
         const hasConfig =
-          !!s.transportUrl && /=\*\*\*|\/[A-Za-z0-9_-]{20,}\//.test(s.transportUrl);
+          !!s.transportUrl &&
+          (s.transportUrl.includes("***") || s.transportUrl.length > 80);
         const showConfigWarning = s.status === "done" && s.count === 0 && !!s.transportUrl && !hasConfig;
         return (
           <View key={s.addonId}>
