@@ -353,6 +353,17 @@ export default function DetailScreen() {
       const subtitleId = activeEpisode && routeId.startsWith("tt")
         ? `${routeId.split(":")[0]}:${activeEpisode.season}:${activeEpisode.episode}`
         : (activeEpisode?.id ?? routeId);
+      // Build an IMDB-form id (with :S:E for series episodes) so subtitle
+      // addons that only respond to tt… ids (OpenSubtitles, SubDL, …)
+      // also return results, not just the addons that accept any id.
+      const routeIdHead = routeId.split(":")[0];
+      const baseImdb =
+        meta?.imdb_id ?? (routeIdHead.startsWith("tt") ? routeIdHead : undefined);
+      const subtitleImdbId = baseImdb
+        ? activeEpisode
+          ? `${baseImdb}:${activeEpisode.season}:${activeEpisode.episode}`
+          : baseImdb
+        : undefined;
       const progressKey = activeEpisode
         ? `${type}:${routeId.split(":")[0]}:${activeEpisode.season}:${activeEpisode.episode}`
         : `${type}:${routeId}`;
@@ -368,6 +379,7 @@ export default function DetailScreen() {
             : (meta?.name ?? "Stream"),
           type: type ?? "",
           subtitleId,
+          subtitleImdbId: subtitleImdbId ?? "",
           progressKey,
           progressId: routeId,
           poster: meta?.poster ?? "",
@@ -455,36 +467,6 @@ export default function DetailScreen() {
         {meta.description ? (
           <Text style={[styles.description, { color: colors.foreground }]}>{meta.description}</Text>
         ) : null}
-
-        {isLoggedIn && addons.length > 0 && (
-          <View style={{ gap: 6 }}>
-            <Text style={[styles.addonLabel, { color: colors.mutedForeground }]}>ACTIVE ADDONS</Text>
-            <View style={styles.addonRow}>
-              <View style={[styles.addonChip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Feather name="database" size={11} color={colors.mutedForeground} />
-                <Text style={[styles.addonChipText, { color: colors.mutedForeground }]}>Cinemeta</Text>
-              </View>
-              {catalogAddons.map((a) => (
-                <View key={`cat-${a.manifest.id}`} style={[styles.addonChip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                  <Feather name="grid" size={11} color={colors.primary} />
-                  <Text style={[styles.addonChipText, { color: colors.primary }]}>{a.manifest.name}</Text>
-                </View>
-              ))}
-              {metaAddons.filter((a) => !catalogAddons.some((c) => c.manifest.id === a.manifest.id)).map((a) => (
-                <View key={`meta-${a.manifest.id}`} style={[styles.addonChip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                  <Feather name="info" size={11} color={colors.primary} />
-                  <Text style={[styles.addonChipText, { color: colors.primary }]}>{a.manifest.name}</Text>
-                </View>
-              ))}
-              {streamAddons.map((a) => (
-                <View key={`stream-${a.manifest.id}`} style={[styles.addonChip, { backgroundColor: colors.surface, borderColor: colors.primary }]}>
-                  <Feather name="play" size={11} color={colors.primary} />
-                  <Text style={[styles.addonChipText, { color: colors.primary }]}>{a.manifest.name}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
 
         {!isSeries && loadingStreams && !streamsLoaded && (
           <View style={[styles.watchBtn, { backgroundColor: colors.surface }]}>

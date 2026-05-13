@@ -43,7 +43,7 @@ interface StremioContextValue {
     onAddon: (p: AddonStreamProgress) => void,
     imdbId?: string
   ) => Promise<void>;
-  getSubtitles: (type: string, id: string) => Promise<StremioSubtitle[]>;
+  getSubtitles: (type: string, id: string, imdbId?: string) => Promise<StremioSubtitle[]>;
   streamAddonsCount: number;
   subtitleAddonsCount: number;
 }
@@ -170,8 +170,8 @@ export function StremioProvider({ children }: { children: React.ReactNode }) {
     [addons, hiddenStreamAddons]
   );
 
-  const getSubtitles = useCallback((type: string, id: string) =>
-    fetchSubtitlesFromAddons(type, id, addons), [addons]);
+  const getSubtitles = useCallback((type: string, id: string, imdbId?: string) =>
+    fetchSubtitlesFromAddons(type, id, addons, imdbId), [addons]);
 
   return (
     <StremioContext.Provider

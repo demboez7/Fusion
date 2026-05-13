@@ -214,9 +214,9 @@ export default function SettingsScreen() {
         <View style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.rowLeft}>
             <Feather name="info" size={18} color={colors.primary} />
-            <Text style={[styles.rowLabel, { color: colors.foreground }]}>StreamTV</Text>
+            <Text style={[styles.rowLabel, { color: colors.foreground }]}>Fusion</Text>
           </View>
-          <Text style={[styles.rowValue, { color: colors.mutedForeground }]}>v1.1.0</Text>
+          <Text style={[styles.rowValue, { color: colors.mutedForeground }]}>v1.0 Beta</Text>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

@@ -176,6 +176,7 @@ export default function PlayerScreen() {
     title,
     type,
     subtitleId,
+    subtitleImdbId,
     progressKey,
     progressId,
     poster,
@@ -187,6 +188,7 @@ export default function PlayerScreen() {
     title: string;
     type?: string;
     subtitleId?: string;
+    subtitleImdbId?: string;
     progressKey?: string;
     progressId?: string;
     poster?: string;
@@ -298,7 +300,11 @@ export default function PlayerScreen() {
     }
     setLoadingAddonSubs(true);
     try {
-      const subs: StremioSubtitle[] = await getSubtitles(type, subtitleId);
+      const subs: StremioSubtitle[] = await getSubtitles(
+        type,
+        subtitleId,
+        subtitleImdbId && subtitleImdbId.length > 0 ? subtitleImdbId : undefined,
+      );
       setAddonTracks(sortSubtitles(buildAddonSubtitleOptions(subs)));
     } catch {
       // ignore — empty list

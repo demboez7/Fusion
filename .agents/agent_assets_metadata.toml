@@ -12,3 +12,9 @@ id = "icK5BxEC3SUxcgiMdZMj3"
 uri = "file://artifacts/streamtv/assets/images/hero_banner.png"
 type = "image"
 title = "hero banner dark cinema"
+
+[[generated]]
+id = "sog5WutqeCFYhy-9eO7r_"
+uri = "file://attached_assets/generated_images/app_icon_square_1024x1024_cfd2.png"
+type = "image"
+title = "generated_image"

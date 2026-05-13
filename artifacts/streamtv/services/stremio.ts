@@ -371,28 +371,56 @@ export async function fetchMetaFromAddons(
 export async function fetchSubtitlesFromAddons(
   type: string,
   id: string,
-  addons: StremioAddon[]
+  addons: StremioAddon[],
+  imdbId?: string
 ): Promise<StremioSubtitle[]> {
   const subAddons = addons.filter((a) => addonSupportsResource(a, "subtitles"));
   if (subAddons.length === 0) return [];
 
-  const results = await Promise.allSettled(
-    subAddons.map((addon) => {
-      const baseUrl = addon.transportUrl.replace(/\/manifest\.json$/, "");
-      const addonName = addon.manifest?.name ?? "Addon";
-      return fetchAddon(`${baseUrl}/subtitles/${type}/${id}.json`, 10000)
-        .then((res) => (res.ok ? res.json() : { subtitles: [] }))
-        .then(
-          (data) =>
-            ((data?.subtitles ?? []) as StremioSubtitle[]).map((s) => ({
-              ...s,
-              addonName,
-            }))
-        )
-        .catch(() => [] as StremioSubtitle[]);
-    })
-  );
+  // Build the same id candidate list we use for streams. Most subtitle
+  // addons (OpenSubtitles, SubDL, etc.) only respond to tt… ids, so when
+  // the primary id is something like "tmdb:…" or "kitsu:…" we need to
+  // also try the IMDB form (with :S:E appended for series episodes).
+  const candidates = buildIdCandidates(id, imdbId);
 
+  const tasks: Promise<StremioSubtitle[]>[] = [];
+  for (const addon of subAddons) {
+    const baseUrl = addon.transportUrl.replace(/\/manifest\.json$/, "");
+    const addonName = addon.manifest?.name ?? "Addon";
+    const idPrefixes: string[] =
+      (addon.manifest as { idPrefixes?: string[] } | undefined)?.idPrefixes ?? [];
+    const filtered = candidates.filter((cid) => {
+      if (idPrefixes.length === 0) return true;
+      return idPrefixes.some((p) => cid.startsWith(p));
+    });
+    const idsToTry = filtered.length > 0 ? filtered : candidates;
+
+    tasks.push(
+      (async () => {
+        const collected: StremioSubtitle[] = [];
+        const seen = new Set<string>();
+        for (const tryId of idsToTry) {
+          try {
+            const res = await fetchAddon(`${baseUrl}/subtitles/${type}/${tryId}.json`, 10000);
+            if (!res.ok) continue;
+            const data = await res.json();
+            const subs = (data?.subtitles ?? []) as StremioSubtitle[];
+            for (const s of subs) {
+              const key = `${s.url ?? s.id}`;
+              if (seen.has(key)) continue;
+              seen.add(key);
+              collected.push({ ...s, addonName });
+            }
+          } catch {
+            // try next candidate
+          }
+        }
+        return collected;
+      })()
+    );
+  }
+
+  const results = await Promise.allSettled(tasks);
   const all: StremioSubtitle[] = [];
   for (const r of results) {
     if (r.status === "fulfilled") all.push(...r.value);
