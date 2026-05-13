@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/fusiontv/"
+title = "Fusion TV"
+version = "1.0.0"
+id = "artifacts/fusiontv"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/fusiontv/" ]
+localPort = 24236
+
+[services.development]
+run = "pnpm --filter @workspace/fusiontv run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/fusiontv", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/fusiontv", "run", "serve" ]
+
+[services.env]
+PORT = "24236"
+BASE_PATH = "/fusiontv/"
