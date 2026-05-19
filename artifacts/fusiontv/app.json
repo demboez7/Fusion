@@ -56,9 +56,6 @@
             "manifestPlaceholders": {
               "leanbackRequired": "true",
               "touchscreenRequired": "false"
-            },
-            "manifestQueries": {
-              "package": []
             }
           }
         }
@@ -67,6 +64,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "beb1110a-44d2-4881-8dcd-0e4d21d7d47a"
+      }
+    },
+    "owner": "tbqlue"
   }
 }
